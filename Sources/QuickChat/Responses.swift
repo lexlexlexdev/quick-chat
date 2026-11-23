@@ -106,13 +106,14 @@ struct ResponsesClient {
         return options
     }
 
-    /// Catalog metadata wins. Only a missing field falls back to facts verified on OpenAI's model pages.
+    /// Luna and Terra both document `none`. The catalog can omit it, so use
+    /// provider metadata for the other levels and keep `none` available.
     private static func reasoningLevels(for entry: ModelCatalog.Entry) -> [ReasoningLevel] {
         guard let supported = entry.supported_reasoning_levels else {
             return [.none, .low, .medium, .high, .xhigh, .max]
         }
-        var seen = Set<ReasoningLevel>()
-        var levels: [ReasoningLevel] = []
+        var seen: Set<ReasoningLevel> = [.none]
+        var levels: [ReasoningLevel] = [.none]
         for item in supported {
             guard let raw = item.effort, let level = ReasoningLevel(rawValue: raw),
                   seen.insert(level).inserted else { continue }

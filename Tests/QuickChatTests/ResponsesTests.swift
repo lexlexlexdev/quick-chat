@@ -137,7 +137,7 @@ import Testing
     let catalog = """
     {"models":[
       {"slug":"gpt-6-luna","display_name":"GPT-6-Luna","visibility":"list","supported_reasoning_levels":[
-        {"effort":"none","description":"Fastest"},
+        {"effort":"none","description":"Even if supplied, only show it once"},
         {"effort":"low","description":"Fast"},
         {"effort":"medium","description":"Balanced"},
         {"effort":"high","description":"Deep"},
@@ -145,13 +145,14 @@ import Testing
         {"effort":"max","description":"Maximum"},
         {"effort":"ultra","description":"Unknown to this app"}
       ]},
-      {"slug":"gpt-6.1-terra","visibility":"list","supported_reasoning_levels":[]}
+      {"slug":"gpt-6.1-terra","visibility":"list","supported_reasoning_levels":[{"effort":"low"},{"effort":"high"}]}
     ]}
     """
     let options = try ResponsesClient.decodeCatalog(Data(catalog.utf8))
     #expect(options.map(\.id) == ["gpt-6-luna", "gpt-6.1-terra"])
     #expect(options[0].reasoningLevels == [.none, .low, .medium, .high, .xhigh, .max])
-    #expect(options[1].reasoningLevels.isEmpty)
+    #expect(options[1].reasoningLevels == [.none, .low, .high])
+    #expect(options[1].preferredReasoning(nil) == ReasoningLevel.none)
 }
 
 @Test func catalogFallsBackToVerifiedModelFactsOnlyWhenMetadataIsMissing() throws {
