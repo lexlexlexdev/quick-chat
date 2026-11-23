@@ -12,6 +12,7 @@
 - Load the transcript as a self-contained document and show a reload action if WebKit cannot display it.
 - Use the same light and dark surface for the popup and transcript, with a compact header and composer.
 - Hide the WebKit pane until the first transcript update is ready, and omit the visible assistant sender label.
+- Inset transcript content so the overlay scrollbar doesn’t cover it.
 
 ## 1.0
 
