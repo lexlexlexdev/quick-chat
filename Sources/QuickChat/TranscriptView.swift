@@ -42,7 +42,7 @@ private struct TranscriptWebView: NSViewRepresentable {
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(context.coordinator, name: "copyCode")
         let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.underPageBackgroundColor = .windowBackgroundColor
+        webView.underPageBackgroundColor = PopupSurface.color
         webView.navigationDelegate = context.coordinator
         context.coordinator.attach(webView)
         return webView

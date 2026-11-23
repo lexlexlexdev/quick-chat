@@ -10,9 +10,8 @@ struct ChatView: View {
     @State private var showingHistory = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             header
-            Divider()
             if let error = model.historyError {
                 HStack {
                     Label(error, systemImage: "exclamationmark.circle")
@@ -29,10 +28,12 @@ struct ChatView: View {
             }
             if model.account != nil && model.historyLoaded { composer }
         }
-        .padding(24)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.regularMaterial, in: panelShape)
-        .overlay { panelShape.strokeBorder(.white.opacity(0.16)).allowsHitTesting(false) }
+        .background(Color(nsColor: PopupSurface.color), in: panelShape)
+        .overlay { panelShape.strokeBorder(.primary.opacity(0.10)).allowsHitTesting(false) }
         .clipShape(panelShape)
         .onChange(of: focusRequest, initial: true) { _, _ in focusComposer() }
         .onChange(of: model.ready) { _, ready in if ready { focusComposer() } }
@@ -45,20 +46,12 @@ struct ChatView: View {
     private var panelShape: RoundedRectangle { RoundedRectangle(cornerRadius: 22, style: .continuous) }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "bubble.left.and.bubble.right.fill")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 40, height: 40)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Quick Chat").font(.system(size: 17, weight: .semibold))
-                Text("CHATGPT").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
-            }
+        HStack(spacing: 6) {
+            Text("Quick Chat")
+                .font(.system(size: 15, weight: .semibold))
             PanelDragRegion()
                 .frame(maxWidth: .infinity)
-                .frame(height: 40)
+                .frame(height: 32)
                 .accessibilityHidden(true)
             iconButton("History", icon: "clock.arrow.circlepath") { showingHistory.toggle() }
                 .popover(isPresented: $showingHistory, arrowEdge: .bottom) {
@@ -74,7 +67,13 @@ struct ChatView: View {
     }
 
     private func iconButton(_ label: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: icon).frame(width: 22, height: 22) }
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
             .buttonStyle(.borderless)
             .accessibilityLabel(label)
             .help(label)
@@ -125,11 +124,8 @@ struct ChatView: View {
                 Text("Pick a model").font(.system(size: 20, weight: .semibold))
                 Text("Choose one in the composer to start chatting.").foregroundStyle(.secondary)
             } else {
-                Image(systemName: "bubble.left")
-                    .font(.system(size: 38, weight: .light))
-                    .foregroundStyle(Color.accentColor)
-                    .accessibilityHidden(true)
-                Text("Ask a question").font(.system(size: 20, weight: .semibold))
+                Text("Ask a question")
+                    .font(.system(size: 22, weight: .semibold))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -147,7 +143,7 @@ struct ChatView: View {
                     .scrollContentBackground(.hidden)
                     .focused($composerFocused)
                     .accessibilityLabel("Message")
-                    .frame(height: 63)
+                    .frame(height: 42)
                     .background(ComposerReturnKeys(focused: composerFocused, send: model.send))
                 if model.draft.isEmpty {
                     Text("Message ChatGPT…")
@@ -156,7 +152,7 @@ struct ChatView: View {
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
             }
-            HStack(spacing: 14) {
+            HStack(spacing: 12) {
                 ModelMenu(model: model)
                 ReasoningMenu(model: model)
                 Spacer(minLength: 8)
@@ -174,16 +170,18 @@ struct ChatView: View {
             }
         }
         .padding(10)
-        .background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
-        .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(.primary.opacity(0.09)).allowsHitTesting(false) }
+        .background(.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 14))
+        .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.primary.opacity(0.10)).allowsHitTesting(false) }
     }
 
     private var sendButton: some View {
         Button(action: model.send) {
             Text("Enter")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(model.canSend ? Color.accentColor : Color.secondary.opacity(0.6))
-                .frame(minWidth: 34, minHeight: 24)
+                .foregroundStyle(model.canSend ? Color.primary : Color.secondary)
+                .padding(.horizontal, 9)
+                .frame(minHeight: 24)
+                .background(.primary.opacity(model.canSend ? 0.085 : 0), in: RoundedRectangle(cornerRadius: 6))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

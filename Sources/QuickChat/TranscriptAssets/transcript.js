@@ -113,9 +113,7 @@
         const element = document.createElement("article");
         element.className = "turn";
         element.innerHTML = `
-            <section class="prompt">
-                <div class="turn-label">You</div><div class="prompt-text"></div>
-            </section>
+            <section class="prompt" aria-label="You"><div class="prompt-text"></div></section>
             <section class="reply">
                 <div class="turn-label">ChatGPT</div>
                 <div class="activity" role="status" hidden>

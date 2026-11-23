@@ -1,5 +1,23 @@
+import AppKit
 import CryptoKit
 import Foundation
+
+enum PopupSurface {
+    private static let light = 0xF8F9FB
+    private static let dark = 0x202124
+
+    static let color = NSColor(name: nil) { appearance in
+        let rgb = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        return NSColor(srgbRed: Double((rgb >> 16) & 0xFF) / 255,
+                       green: Double((rgb >> 8) & 0xFF) / 255,
+                       blue: Double(rgb & 0xFF) / 255, alpha: 1)
+    }
+
+    static let stylesheet = """
+    :root { --canvas: \(String(format: "#%06x", light)); }
+    @media (prefers-color-scheme: dark) { :root { --canvas: \(String(format: "#%06x", dark)); } }
+    """
+}
 
 struct TranscriptDocument {
     enum AssetError: Error { case invalidInlineAsset }
@@ -8,7 +26,8 @@ struct TranscriptDocument {
 
     static func makeHTML() throws -> String {
         let assets = Bundle.module.resourceURL!.appendingPathComponent("TranscriptAssets", isDirectory: true)
-        let styles = try read(assets.appendingPathComponent("transcript.css"), tag: "style")
+        let styles = try PopupSurface.stylesheet + "\n"
+            + read(assets.appendingPathComponent("transcript.css"), tag: "style")
         let scripts = try ["markdown-it.min.js", "highlight.min.js", "transcript.js"].map {
             try read(assets.appendingPathComponent($0), tag: "script")
         }
