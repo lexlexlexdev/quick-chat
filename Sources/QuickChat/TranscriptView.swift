@@ -7,19 +7,21 @@ struct TranscriptView: View {
     let exchanges: [ChatModel.Exchange]
     let source: ReplySource?
     let activity: ReplyActivity
-    @State private var failed = false
+    @State private var phase = TranscriptPhase.loading
     @State private var attempt = 0
 
     var body: some View {
-        TranscriptWebView(exchanges: exchanges, source: source, activity: activity, failed: $failed)
+        TranscriptWebView(exchanges: exchanges, source: source, activity: activity, phase: $phase)
             .id(attempt)
-            .opacity(failed ? 0 : 1)
+            .opacity(phase == .visible ? 1 : 0)
+            .allowsHitTesting(phase == .visible)
+            .accessibilityHidden(phase != .visible)
             .overlay {
-                if failed {
+                if phase == .failed {
                     VStack(spacing: 10) {
                         Text("Couldn’t display the transcript.")
                         Button("Reload transcript") {
-                            failed = false
+                            phase = .loading
                             attempt += 1
                         }
                     }
@@ -28,14 +30,18 @@ struct TranscriptView: View {
     }
 }
 
+private enum TranscriptPhase {
+    case loading, visible, failed
+}
+
 private struct TranscriptWebView: NSViewRepresentable {
     let exchanges: [ChatModel.Exchange]
     let source: ReplySource?
     let activity: ReplyActivity
 
-    @Binding var failed: Bool
+    @Binding var phase: TranscriptPhase
 
-    func makeCoordinator() -> Coordinator { Coordinator(failed: $failed) }
+    func makeCoordinator() -> Coordinator { Coordinator(phase: $phase) }
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -70,10 +76,10 @@ private struct TranscriptWebView: NSViewRepresentable {
         private var turnsDirty = true
         private var sending = false
         private var scheduled: Task<Void, Never>?
-        private let failed: Binding<Bool>
+        private let phase: Binding<TranscriptPhase>
 
-        init(failed: Binding<Bool>) {
-            self.failed = failed
+        init(phase: Binding<TranscriptPhase>) {
+            self.phase = phase
         }
 
         func attach(_ view: WKWebView) {
@@ -96,7 +102,7 @@ private struct TranscriptWebView: NSViewRepresentable {
             NSLog("Quick Chat transcript failed (%@ %ld)", details.domain, details.code)
             Task { [weak self] in
                 guard let self, view != nil else { return }
-                failed.wrappedValue = true
+                phase.wrappedValue = .failed
             }
         }
 
@@ -169,10 +175,11 @@ private struct TranscriptWebView: NSViewRepresentable {
             view.callAsyncJavaScript("return window.updateTranscript(turns, liveText)",
                                      arguments: ["turns": turnPayload, "liveText": liveText],
                                      in: nil, in: .page) { [weak self] result in
-                guard let self else { return }
+                guard let self, self.view != nil else { return }
                 self.sending = false
                 switch result {
-                case .success(let value) where value as? Bool == true: break
+                case .success(let value) where value as? Bool == true:
+                    if self.phase.wrappedValue == .loading { self.phase.wrappedValue = .visible }
                 case .success:
                     self.reportFailure(WKError(.javaScriptResultTypeIsUnsupported))
                 case .failure(let error):

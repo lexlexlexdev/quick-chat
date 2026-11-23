@@ -114,8 +114,7 @@
         element.className = "turn";
         element.innerHTML = `
             <section class="prompt" aria-label="You"><div class="prompt-text"></div></section>
-            <section class="reply">
-                <div class="turn-label">ChatGPT</div>
+            <section class="reply" aria-label="Assistant">
                 <div class="activity" role="status" hidden>
                     <div class="loader" aria-hidden="true">
                         <span class="loader-bar loader-bar-1"></span><span class="loader-bar loader-bar-2"></span>
