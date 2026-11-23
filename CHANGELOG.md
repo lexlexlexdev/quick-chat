@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
+
+- Record, change, or remove the global shortcut in **Settings**, alongside the ChatGPT connection.
+
+## 1.0.0
 
 - Read valid ChatGPT reply streams even if the server omits or mislabels `Content-Type`. Report provider errors and unexpected response formats separately.
 - Pick GPT-6 Luna or GPT-6.1 Terra and an explicit reasoning level in the chat panel. None is available for both models; the app remembers your selection per model. Configure the global shortcut via **Keyboard Shortcut…** in the menu bar.
@@ -15,7 +19,7 @@
 - Inset transcript content so the overlay scrollbar doesn’t cover it.
 - Reuse the transcript’s WebKit view across chat switches to avoid a white flash.
 
-## 1.0
+### Initial implementation
 
 - Open Quick Chat from the menu bar or a shortcut recorded in Settings. No global shortcut is assigned at install.
 - Connect an eligible ChatGPT plan in Settings. Quick Chat uses its own Keychain item and does not use an API key as a fallback.
