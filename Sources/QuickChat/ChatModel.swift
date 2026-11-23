@@ -4,7 +4,6 @@ import SwiftStreamingMarkdown
 
 final class ReplySource: StreamedMarkdownSource {
     private let latest = CurrentValueSubject<String, Never>("")
-    var snapshot: String { latest.value }
     var hasText: AnyPublisher<Bool, Never> {
         latest.map { !$0.isEmpty }.removeDuplicates().eraseToAnyPublisher()
     }

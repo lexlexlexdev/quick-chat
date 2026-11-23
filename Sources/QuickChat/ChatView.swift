@@ -379,6 +379,7 @@ private struct TranscriptView: View {
     @State private var height: CGFloat = 0
     private static let markdown = MarkdownRenderConfig.default.withBlockSpacing(value: 10)
         .withCodeBlockConfig(value: CodeBlockConfig(theme: .xcode, backgroundColor: .primary.opacity(0.055), foregroundColor: .secondary))
+        .withTextSelectionConfig(value: TextSelectionConfig(isEnabled: false))
     private static let streamingMarkdown = markdown.withShouldAnimateText(value: true)
 
     var body: some View {
@@ -395,7 +396,7 @@ private struct TranscriptView: View {
                             .padding(12)
                             .background(.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
                             VStack(alignment: .leading, spacing: 8) {
-                                replyHeader(exchange)
+                                Text("ChatGPT").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                 reply(exchange)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -429,18 +430,6 @@ private struct TranscriptView: View {
                     following = true
                     reader.scrollTo("latest", anchor: .bottom)
                 }
-            }
-        }
-    }
-
-    private func replyHeader(_ exchange: ChatModel.Exchange) -> some View {
-        let source: ReplySource?
-        if case .replying = exchange.state { source = model.activeSource } else { source = nil }
-        return HStack {
-            Text("ChatGPT").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Spacer()
-            if source != nil || !exchange.reply.isEmpty {
-                ReplyTextSelection(text: exchange.reply, source: source)
             }
         }
     }

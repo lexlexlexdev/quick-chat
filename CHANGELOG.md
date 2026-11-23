@@ -8,7 +8,6 @@
 - The global shortcut opens a fresh chat without interrupting replies. Return to any streaming chat through History. **Open Quick Chat** in the menu bar resumes the current chat.
 - The waiting indicator shows provider progress and public reasoning summaries when available. Press Enter to send or Shift–Enter for a new line.
 - Select text in the popup without dragging the window. Move the popup by dragging the blank space in its header.
-- Use **Select text** on a reply to select across paragraphs and code blocks in a single Markdown text view.
 
 ## 1.0
 
