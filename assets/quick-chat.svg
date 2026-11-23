@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="320" viewBox="0 0 680 320" role="img" aria-labelledby="title">
+  <title id="title">Quick Chat popup illustration</title>
+  <defs>
+    <linearGradient id="backdrop" x2="1" y2="1">
+      <stop stop-color="#e9eaff"/>
+      <stop offset="1" stop-color="#cbe7ff"/>
+    </linearGradient>
+    <pattern id="dots" width="18" height="18" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="1" fill="#476baf" opacity=".19"/>
+    </pattern>
+  </defs>
+  <rect width="680" height="320" rx="24" fill="url(#backdrop)"/>
+  <rect width="680" height="320" rx="24" fill="url(#dots)"/>
+  <rect x="131" y="38" width="418" height="251" rx="20" fill="#345382" opacity=".15"/>
+  <rect x="131.5" y="29.5" width="417" height="251" rx="20" fill="#f9fafc" stroke="#bdcbe2"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" fill="#202638">
+    <text x="155" y="61" font-size="16" font-weight="700">Quick Chat</text>
+    <path d="M155 76h370" stroke="#e3e8f0"/>
+    <g fill="none" stroke="#6c7a92" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M460 53a6 6 0 1 1 1 6m-1-6v4h4m2-6v4l2 2"/>
+      <path d="M491 51h-6v10h10v-6m-6 1 7-7"/>
+      <path d="m514 51 9 9m0-9-9 9"/>
+    </g>
+    <rect x="298" y="94" width="227" height="37" rx="13" fill="#e9eef9"/>
+    <text x="314" y="117" font-size="14">What makes a good shortcut?</text>
+    <text x="158" y="158" font-size="14">Easy to reach. Hard to hit by accident.</text>
+    <rect x="155.5" y="199.5" width="369" height="60" rx="12" fill="#f1f4fa" stroke="#dbe3f1"/>
+    <text x="169" y="222" font-size="13" fill="#5e6d88">Message ChatGPT…</text>
+    <text x="169" y="245" font-size="11" fill="#536581">GPT-6.1 Terra</text>
+    <text x="500" y="245" text-anchor="end" font-size="11" fill="#536581">Enter</text>
+  </g>
+</svg>
