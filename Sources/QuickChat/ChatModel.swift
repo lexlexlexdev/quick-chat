@@ -1,19 +1,9 @@
 import AppKit
 import Combine
-import SwiftStreamingMarkdown
 
-final class ReplySource: StreamedMarkdownSource {
+final class ReplySource {
     private let latest = CurrentValueSubject<String, Never>("")
-    var hasText: AnyPublisher<Bool, Never> {
-        latest.map { !$0.isEmpty }.removeDuplicates().eraseToAnyPublisher()
-    }
-
-    var text: AsyncStream<String> {
-        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
-            let subscription = latest.sink { continuation.yield($0) }
-            continuation.onTermination = { _ in subscription.cancel() }
-        }
-    }
+    var snapshots: AnyPublisher<String, Never> { latest.eraseToAnyPublisher() }
 
     func update(_ snapshot: String) { latest.send(snapshot) }
 }

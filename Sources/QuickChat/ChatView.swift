@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import SwiftStreamingMarkdown
 
 struct ChatView: View {
     @ObservedObject var model: ChatModel
@@ -25,7 +24,8 @@ struct ChatView: View {
             if model.exchanges.isEmpty {
                 emptyState
             } else {
-                TranscriptView(model: model).id(model.activeChatID)
+                TranscriptView(exchanges: model.exchanges, source: model.activeSource, activity: model.replyActivity)
+                    .id(model.activeChatID)
             }
             if model.account != nil && model.historyLoaded { composer }
         }
@@ -368,196 +368,6 @@ private struct ChatHistoryList: View {
         .accessibilityValue(model.isStreaming(entry.id) ? "Reply in progress" : "")
         .accessibilityAddTraits(isActive ? AccessibilityTraits.isSelected : [])
         .help(entry.title)
-    }
-}
-
-// MARK: - Transcript
-
-private struct TranscriptView: View {
-    @ObservedObject var model: ChatModel
-    @State private var following = true
-    @State private var height: CGFloat = 0
-    private static let markdown = MarkdownRenderConfig.default.withBlockSpacing(value: 10)
-        .withCodeBlockConfig(value: CodeBlockConfig(theme: .xcode, backgroundColor: .primary.opacity(0.055), foregroundColor: .secondary))
-        .withTextSelectionConfig(value: TextSelectionConfig(isEnabled: false))
-    private static let streamingMarkdown = markdown.withShouldAnimateText(value: true)
-
-    var body: some View {
-        GeometryReader { viewport in
-            ScrollViewReader { reader in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        ForEach(model.exchanges) { exchange in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("You").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                Text(exchange.prompt).textSelection(.enabled)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
-                            .background(.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("ChatGPT").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                reply(exchange)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 2)
-                            .environment(\.openURL, OpenURLAction { url in url.scheme == "https" ? .systemAction : .discarded })
-                            .textSelection(.enabled)
-                        }
-                        Color.clear.frame(height: 1).id("latest")
-                    }
-                    .padding(.vertical, 2)
-                    .background {
-                        GeometryReader { content in
-                            Color.clear.preference(key: TranscriptFrame.self, value: content.frame(in: .named("transcript")))
-                        }
-                    }
-                }
-                .coordinateSpace(name: "transcript")
-                .onAppear {
-                    following = true
-                    reader.scrollTo("latest", anchor: .bottom)
-                }
-                .onPreferenceChange(TranscriptFrame.self) { frame in
-                    if frame.height != height {
-                        height = frame.height
-                        if following { reader.scrollTo("latest", anchor: .bottom) }
-                    } else {
-                        following = frame.maxY <= viewport.size.height + 56
-                    }
-                }
-                .onChange(of: model.exchanges.last?.id) { _, _ in
-                    following = true
-                    reader.scrollTo("latest", anchor: .bottom)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private func reply(_ exchange: ChatModel.Exchange) -> some View {
-        if case .replying = exchange.state, let source = model.activeSource {
-            LiveReply(activity: model.replyActivity, source: source, config: Self.streamingMarkdown)
-        } else {
-            if !exchange.reply.isEmpty { MarkdownView(text: exchange.reply, config: Self.markdown) }
-            if !exchange.reasoningSummary.isEmpty {
-                ReasoningSummaryDisclosure(summary: exchange.reasoningSummary)
-            }
-            switch exchange.state {
-            case .stopped:
-                Text("Reply stopped").font(.caption).foregroundStyle(.secondary)
-            case .failed(let message):
-                Label(message, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(.red)
-                    .textSelection(.enabled)
-                    .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-            default: EmptyView()
-            }
-        }
-    }
-}
-
-private struct TranscriptFrame: PreferenceKey {
-    static let defaultValue = CGRect.zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
-}
-
-private struct LiveReply: View {
-    let activity: ReplyActivity
-    let source: ReplySource
-    let config: MarkdownRenderConfig
-    @State private var hasText = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !hasText { ActivityStatus(activity: activity) }
-            StreamedMarkdownView(source: source, config: config)
-        }
-        .onReceive(source.hasText) { hasText = $0 }
-    }
-}
-
-/// Provider-reported progress only: waiting, thinking, or an actual reasoning summary.
-private struct ActivityStatus: View {
-    let activity: ReplyActivity
-
-    var body: some View {
-        switch activity {
-        case .waiting:
-            HStack(spacing: 8) {
-                BarsLoader(label: "Waiting for a reply")
-                Text("Waiting for a reply…")
-            }
-            .font(.callout)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Waiting for a reply")
-            .accessibilityAddTraits(.updatesFrequently)
-        case .thinking:
-            HStack(spacing: 8) {
-                BarsLoader(label: "Thinking")
-                Text("Thinking…")
-            }
-            .font(.callout)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Thinking")
-            .accessibilityAddTraits(.updatesFrequently)
-        case .summary(let text):
-            HStack(alignment: .top, spacing: 8) {
-                BarsLoader(label: "Thinking").padding(.top, 2)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Reasoning summary")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(text)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(6)
-                        .truncationMode(.head)
-                        .textSelection(.enabled)
-                        .accessibilityLabel("Reasoning summary: \(text)")
-                }
-            }
-        }
-    }
-}
-
-private struct ReasoningSummaryDisclosure: View {
-    let summary: String
-    @State private var expanded = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button {
-                if reduceMotion {
-                    expanded.toggle()
-                } else {
-                    withAnimation(.snappy(duration: 0.2)) { expanded.toggle() }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 8, weight: .bold))
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                    Text("Reasoning summary")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Reasoning summary")
-            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
-            if expanded {
-                Text(summary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .padding(9)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
-            }
-        }
     }
 }
 

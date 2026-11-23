@@ -1,0 +1,35 @@
+Bundled third-party browser builds
+==================================
+
+Both files are unmodified official distribution builds, vendored so the
+transcript view makes no network requests at runtime. License texts are in
+licenses/.
+
+
+markdown-it 15.0.3
+------------------
+File:        markdown-it.min.js (upstream: dist/browser/markdown-it.umd.min.js)
+Global:      window.markdownit
+Upstream:    https://github.com/markdown-it/markdown-it
+Package:     https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.3.tgz
+Integrity:   sha512-+Az7Ojz3iRGu8KYMvJ6xVhvrxP3eE+vEtJX75Ow88XBpcQNV/0lGX5ZynIIBftREo4DC2jsveAMDaeltmm8QvQ==
+Tarball:     sha256 98a7453983ab0e268c17dbd5260bf7190ba46b4cca912327fc1c1a2578e4b56d
+File:        sha256 391f2aa638e75e6c7859d0a5c5650ef0956722a45998f17e05b83bc655778e1e
+License:     MIT, see licenses/markdown-it-LICENSE (Copyright (c) 2014 Vitaly Puzrin, Alex Kocharin)
+
+
+highlight.js 11.12.0 (common browser build)
+-------------------------------------------
+File:        highlight.min.js (upstream: @highlightjs/cdn-assets/highlight.min.js)
+Global:      window.hljs
+Languages:   bash, c, cpp, csharp, css, diff, go, graphql, ini, java, javascript,
+             json, kotlin, less, lua, makefile, markdown, objectivec, perl, php,
+             php-template, plaintext, python, python-repl, r, ruby, rust, scss,
+             shell, sql, swift, typescript, vbnet, wasm, xml, yaml
+             (includes Swift and Go; no extra grammar files are bundled)
+Upstream:    https://github.com/highlightjs/highlight.js
+Package:     https://registry.npmjs.org/@highlightjs/cdn-assets/-/cdn-assets-11.12.0.tgz
+Integrity:   sha512-KvOKXODaiFmId9xaq3xc5xCL66wVLUuOngDbO9B/kewbFTqdGbn2nJxNhN3H5R1cgDTVj6R8vH0zgiNDEGjpDw==
+Tarball:     sha256 b8a006d30f45afe783072569f3d69c5b60c0e7b9ca28cd474e12f2584e2a3bd9
+File:        sha256 8ab71eb09c51f501e5e25157d9cff100e46cc29bcbfc744d0b746d451fca7f53
+License:     BSD-3-Clause, see licenses/highlight.js-LICENSE (Copyright (c) 2006, Ivan Sagalaev)

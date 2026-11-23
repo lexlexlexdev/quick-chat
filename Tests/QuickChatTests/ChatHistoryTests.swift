@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 @testable import QuickChat
@@ -109,17 +110,19 @@ import Testing
     #expect(history.active.exchanges.last?.reply == "First answer")
 }
 
-@Test func returningToStreamingChatReceivesTextProducedWhileAway() async {
+@Test func returningToStreamingChatReceivesTextProducedWhileAway() {
     let source = ReplySource()
-    var first = source.text.makeAsyncIterator()
+    var first: [String] = []
+    let reader = source.snapshots.sink { first.append($0) }
     source.update("Start")
-    let initial = await first.next()
-    #expect(initial == "Start")
+    #expect(first.last == "Start")
+    reader.cancel()
 
     source.update("Start plus background text")
-    var reopened = source.text.makeAsyncIterator()
-    let resumed = await reopened.next()
-    #expect(resumed == "Start plus background text")
+    var reopened: [String] = []
+    let reopenedReader = source.snapshots.sink { reopened.append($0) }
+    #expect(reopened == ["Start plus background text"])
+    reopenedReader.cancel()
 }
 
 private func withTemporaryHistoryFile(_ run: (URL) throws -> Void) throws {
