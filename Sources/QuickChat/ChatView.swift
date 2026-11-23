@@ -395,7 +395,7 @@ private struct TranscriptView: View {
                             .padding(12)
                             .background(.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("ChatGPT").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                replyHeader(exchange)
                                 reply(exchange)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -429,6 +429,18 @@ private struct TranscriptView: View {
                     following = true
                     reader.scrollTo("latest", anchor: .bottom)
                 }
+            }
+        }
+    }
+
+    private func replyHeader(_ exchange: ChatModel.Exchange) -> some View {
+        let source: ReplySource?
+        if case .replying = exchange.state { source = model.activeSource } else { source = nil }
+        return HStack {
+            Text("ChatGPT").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Spacer()
+            if source != nil || !exchange.reply.isEmpty {
+                ReplyTextSelection(text: exchange.reply, source: source)
             }
         }
     }
