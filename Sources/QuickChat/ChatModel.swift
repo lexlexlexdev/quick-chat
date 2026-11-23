@@ -236,6 +236,14 @@ final class ChatModel: ObservableObject {
         conversations.startNew()
     }
 
+    func startChatFromHotkey() async {
+        if let replyTask {
+            stop()
+            await replyTask.value
+        }
+        newChat()
+    }
+
     func selectChat(_ id: UUID) {
         guard !replying, id != activeChatID, flushHistory() else { return }
         conversations.select(id)

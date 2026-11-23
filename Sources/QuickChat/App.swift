@@ -38,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
 
         shortcuts.onShortcutChange = { [weak self] in self?.updateStatusItem() }
-        shortcuts.install { [weak self] in self?.showPanel() }
+        shortcuts.install { [weak self] in self?.openFreshChat() }
         updateStatusItem()
     }
 
@@ -94,6 +94,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.setFrame(centeredFrame(for: size, on: screen), display: false)
         }
         self.panel = panel
+    }
+
+    private func openFreshChat() {
+        Task { @MainActor in
+            await model.startChatFromHotkey()
+            showPanel()
+        }
     }
 
     /// Panels become key only here, on an explicit open. The nonactivating style lets the
