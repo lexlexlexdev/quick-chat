@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var panel: QuickChatPanel?
     private var settingsWindow: NSWindow?
+    private var shortcutWindow: NSWindow?
     private var statusItem: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -113,30 +114,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Settings
 
     @objc private func showSettings() {
-        hidePanel()
         if settingsWindow == nil {
-            let content = QuickChatSettingsView(model: model, shortcuts: shortcuts)
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 500, height: 460),
-                styleMask: [.titled, .closable],
-                backing: .buffered,
-                defer: false
+            settingsWindow = makePreferencesWindow(
+                "Quick Chat Settings", height: 280,
+                content: ScrollView { AccountSettingsView(model: model).padding(24) }.background(.regularMaterial)
             )
-            window.title = "Quick Chat Settings"
-            window.isReleasedWhenClosed = false
-            window.isRestorable = false
-            window.collectionBehavior = [.moveToActiveSpace]
-            window.contentView = NSHostingView(rootView: content)
-            window.setContentSize(NSSize(width: 500, height: 460))
-            if let screen = activeScreen {
-                window.setFrame(centeredFrame(for: window.frame.size, on: screen), display: false)
-            } else {
-                window.center()
-            }
-            settingsWindow = window
         }
+        showPreferences(settingsWindow)
+    }
+
+    @objc private func showShortcut() {
+        if shortcutWindow == nil {
+            shortcutWindow = makePreferencesWindow(
+                "Quick Chat Shortcut", height: 200, content: ShortcutSettingsView(shortcuts: shortcuts)
+            )
+        }
+        showPreferences(shortcutWindow)
+    }
+
+    private func showPreferences(_ window: NSWindow?) {
+        hidePanel()
         NSApp.activate(ignoringOtherApps: true)
-        settingsWindow?.makeKeyAndOrderFront(nil)
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func makePreferencesWindow<Content: View>(_ title: String, height: CGFloat, content: Content) -> NSWindow {
+        let size = NSSize(width: 500, height: height)
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = title
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.collectionBehavior = [.moveToActiveSpace]
+        window.contentView = NSHostingView(rootView: content)
+        window.setContentSize(size)
+        if let screen = activeScreen {
+            window.setFrame(centeredFrame(for: window.frame.size, on: screen), display: false)
+        } else {
+            window.center()
+        }
+        return window
     }
 
     // MARK: - Menu bar
@@ -156,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
+        menu.addItem(shortcutMenuItem())
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Quick Chat", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
@@ -173,6 +195,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func shortcutMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Keyboard Shortcut…", action: #selector(showShortcut), keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
     private func buildMainMenu() {
         let mainMenu = NSMenu()
 
@@ -181,6 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self
         appMenu.addItem(settings)
+        appMenu.addItem(shortcutMenuItem())
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit Quick Chat", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
@@ -239,19 +268,14 @@ private struct ChatShell: View {
     }
 }
 
-struct QuickChatSettingsView: View {
-    let model: ChatModel
+private struct ShortcutSettingsView: View {
     @ObservedObject var shortcuts: ShortcutController
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                shortcutSection
-                Divider()
-                AccountSettingsView(model: model)
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            shortcutSection
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(.regularMaterial)
     }

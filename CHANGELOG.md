@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Read valid ChatGPT reply streams even if the server omits or mislabels `Content-Type`. Report provider errors and unexpected response formats separately.
+- Pick the model and its supported reasoning level in the chat panel. Settings is for connecting ChatGPT; configure the global shortcut via **Keyboard Shortcut…** in the menu bar.
+- Start a new chat without deleting the previous one. The history picker keeps conversations and drafts until you quit or sign out.
+- The waiting indicator shows provider progress and public reasoning summaries when available. Send with the return arrow or `⌘↩`.
+
 ## 1.0
 
 - Open Quick Chat from the menu bar or a shortcut recorded in Settings. No global shortcut is assigned at install.

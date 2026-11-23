@@ -8,13 +8,18 @@ struct ChatView: View {
     let openSettings: () -> Void
     let hide: () -> Void
     @FocusState private var composerFocused: Bool
+    @State private var showingHistory = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
             Divider()
-            if model.exchanges.isEmpty { emptyState } else { TranscriptView(model: model) }
-            if model.ready { composer }
+            if model.exchanges.isEmpty {
+                emptyState
+            } else {
+                TranscriptView(model: model).id(model.activeChatID)
+            }
+            if model.account != nil { composer }
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -23,13 +28,15 @@ struct ChatView: View {
         .clipShape(panelShape)
         .onChange(of: focusRequest, initial: true) { _, _ in focusComposer() }
         .onChange(of: model.ready) { _, ready in if ready { focusComposer() } }
+        .onChange(of: model.activeChatID) { _, _ in if !showingHistory { focusComposer() } }
+        .onChange(of: showingHistory) { _, shown in if !shown { focusComposer() } }
         .onExitCommand(perform: hide)
     }
 
     private var panelShape: RoundedRectangle { RoundedRectangle(cornerRadius: 22, style: .continuous) }
 
     private var header: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Image(systemName: "bubble.left.and.bubble.right.fill")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Color.accentColor)
@@ -41,10 +48,15 @@ struct ChatView: View {
                 Text("CHATGPT").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
             }
             Spacer()
-            if !model.exchanges.isEmpty {
-                iconButton("New chat", icon: "square.and.pencil") { model.newChat(); focusComposer() }
-                    .disabled(model.replying)
-            }
+            iconButton("History", icon: "clock.arrow.circlepath") { showingHistory.toggle() }
+                .disabled(model.replying)
+                .help(model.replying ? "History is unavailable while a reply is running" : "History")
+                .popover(isPresented: $showingHistory, arrowEdge: .bottom) {
+                    ChatHistoryList(model: model, select: model.selectChat)
+                }
+            iconButton("New chat", icon: "square.and.pencil") { model.newChat(); focusComposer() }
+                .disabled(model.replying)
+                .help(model.replying ? "New chat is unavailable while a reply is running" : "New chat")
             iconButton("Settings", icon: "gearshape", action: openSettings)
             iconButton("Hide chat", icon: "xmark", action: hide)
         }
@@ -59,35 +71,52 @@ struct ChatView: View {
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            if model.ready {
+            if let status = model.accountStatus {
+                ProgressView().controlSize(.small)
+                Text(status.rawValue).foregroundStyle(.secondary)
+            } else if model.account == nil {
+                Text("Connect ChatGPT").font(.system(size: 20, weight: .semibold))
+                if let error = model.accountError {
+                    Text(error).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Use an eligible ChatGPT plan. No API key is required.").foregroundStyle(.secondary)
+                }
+                Button("Open Settings", action: openSettings).buttonStyle(.borderedProminent)
+            } else if model.models.isEmpty {
+                Text("No models available").font(.system(size: 20, weight: .semibold))
+                Text(model.modelError ?? "Reload the model list, then pick a model in the composer.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Reload models", action: model.reloadModels).buttonStyle(.bordered)
+            } else if model.currentModel == nil {
+                Image(systemName: "bubble.left")
+                    .font(.system(size: 38, weight: .light))
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+                Text("Pick a model").font(.system(size: 20, weight: .semibold))
+                Text("Choose one in the composer to start chatting.").foregroundStyle(.secondary)
+            } else {
                 Image(systemName: "bubble.left")
                     .font(.system(size: 38, weight: .light))
                     .foregroundStyle(Color.accentColor)
                     .accessibilityHidden(true)
                 Text("Ask a question").font(.system(size: 20, weight: .semibold))
-            } else if let status = model.accountStatus {
-                ProgressView().controlSize(.small)
-                Text(status.rawValue).foregroundStyle(.secondary)
-            } else {
-                Text(model.account == nil ? "Connect ChatGPT" : "No model selected")
-                    .font(.system(size: 20, weight: .semibold))
-                if let error = model.accountError {
-                    Text(error).foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else if model.account != nil {
-                    Text("Choose a model in Settings to start chatting.").foregroundStyle(.secondary)
-                }
-                Button("Open Settings", action: openSettings).buttonStyle(.borderedProminent)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var draftBinding: Binding<String> {
+        Binding(get: { model.draft }, set: { model.draft = $0 })
+    }
+
     private var composer: some View {
         VStack(alignment: .leading, spacing: 7) {
             ZStack(alignment: .topLeading) {
-                TextEditor(text: $model.draft)
+                TextEditor(text: draftBinding)
                     .font(.body)
                     .scrollContentBackground(.hidden)
                     .focused($composerFocused)
@@ -100,19 +129,21 @@ struct ChatView: View {
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
             }
-            HStack(spacing: 10) {
-                Text(model.currentModel?.name ?? model.selectedModel).lineLimit(1).truncationMode(.middle)
-                    .font(.caption).foregroundStyle(.secondary)
-                Spacer()
+            HStack(spacing: 12) {
+                ModelMenu(model: model)
+                ReasoningMenu(model: model)
+                Spacer(minLength: 8)
                 if model.replying {
-                    Button("Stop", systemImage: "stop.fill", action: model.stop)
-                        .buttonStyle(.bordered)
+                    stopButton
                 } else {
-                    Button("Send", systemImage: "arrow.up", action: model.send)
-                        .buttonStyle(.borderedProminent)
-                        .keyboardShortcut(.return, modifiers: .command)
-                        .disabled(!model.canSend)
+                    sendButton
                 }
+            }
+            if !model.models.isEmpty, let error = model.modelError {
+                Label(error, systemImage: "exclamationmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(10)
@@ -120,12 +151,204 @@ struct ChatView: View {
         .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(.primary.opacity(0.09)).allowsHitTesting(false) }
     }
 
+    private var sendButton: some View {
+        Button(action: model.send) {
+            Image(systemName: "return")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(model.canSend ? Color.accentColor : Color.secondary.opacity(0.6))
+                .frame(width: 24, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.return, modifiers: .command)
+        .disabled(!model.canSend)
+        .accessibilityLabel("Send message")
+        .help("Send message (⌘↩)")
+    }
+
+    private var stopButton: some View {
+        Button(action: model.stop) {
+            Image(systemName: "stop.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Stop reply")
+        .help("Stop reply")
+    }
+
     private func focusComposer() {
-        guard model.ready else { return }
+        guard model.account != nil else { return }
         composerFocused = false
         Task { @MainActor in composerFocused = true }
     }
 }
+
+// MARK: - Composer controls
+
+private struct ModelMenu: View {
+    @ObservedObject var model: ChatModel
+
+    var body: some View {
+        Menu {
+            if !model.models.isEmpty {
+                Picker("Model", selection: $model.selectedModel) {
+                    ForEach(model.models) { option in
+                        Text(option.name).tag(option.id)
+                    }
+                }
+                .pickerStyle(.inline)
+                Divider()
+            }
+            Button("Reload models", action: model.reloadModels)
+        } label: {
+            chip(title)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .disabled(model.accountStatus != nil || model.replying)
+        .frame(maxWidth: 200, alignment: .leading)
+        .accessibilityLabel("Model")
+        .accessibilityValue(title)
+        .help("Model")
+    }
+
+    private var title: String {
+        if let current = model.currentModel { return current.name }
+        if model.accountStatus == .loadingModels { return "Loading models…" }
+        return model.models.isEmpty ? "No models" : "Choose model"
+    }
+}
+
+private struct ReasoningMenu: View {
+    @ObservedObject var model: ChatModel
+
+    var body: some View {
+        if let current = model.currentModel, !current.reasoningLevels.isEmpty {
+            Menu {
+                Picker("Reasoning effort", selection: reasoningBinding) {
+                    Text("Default").tag(ReasoningLevel?.none)
+                    ForEach(current.reasoningLevels, id: \.self) { level in
+                        Text(level.label).tag(ReasoningLevel?.some(level))
+                    }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                chip("Reasoning: \(label(for: current))")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .disabled(model.replying)
+            .accessibilityLabel("Reasoning effort")
+            .accessibilityValue(label(for: current))
+            .help("Reasoning effort")
+        }
+    }
+
+    private var reasoningBinding: Binding<ReasoningLevel?> {
+        Binding(get: { model.selectedReasoning }, set: { model.selectedReasoning = $0 })
+    }
+
+    private func label(for option: ChatModelOption) -> String {
+        guard let selected = model.selectedReasoning, option.reasoningLevels.contains(selected) else {
+            return "Default"
+        }
+        return selected.label
+    }
+}
+
+private func chip(_ text: String) -> some View {
+    HStack(spacing: 4) {
+        Text(text)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        Image(systemName: "chevron.down")
+            .font(.system(size: 7, weight: .semibold))
+    }
+    .font(.caption)
+    .foregroundStyle(.secondary)
+    .contentShape(Rectangle())
+}
+
+// MARK: - History
+
+private struct ChatHistoryList: View {
+    @ObservedObject var model: ChatModel
+    let select: (UUID) -> Void
+    @Namespace private var selection
+    @State private var hovered: UUID?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let entries = model.history
+        VStack(alignment: .leading, spacing: 2) {
+            if entries.isEmpty {
+                Text("No conversations yet")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(entries) { entry in
+                            row(entry)
+                        }
+                    }
+                }
+                .frame(height: min(CGFloat(entries.count) * 31, 300))
+            }
+        }
+        .padding(6)
+        .frame(width: 244)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(listShape)
+        .overlay { listShape.strokeBorder(.primary.opacity(0.12)).allowsHitTesting(false) }
+        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: model.activeChatID)
+    }
+
+    private var listShape: RoundedRectangle { RoundedRectangle(cornerRadius: 10, style: .continuous) }
+
+    private func row(_ entry: ChatHistoryEntry) -> some View {
+        let isActive = entry.id == model.activeChatID
+        return Button { select(entry.id) } label: {
+            Text(entry.title)
+                .font(.callout)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(isActive ? Color.accentColor : Color.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background {
+                    if isActive {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.12))
+                            .matchedGeometryEffect(id: "selection", in: selection)
+                    } else if hovered == entry.id {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(.primary.opacity(0.055))
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in
+            if inside {
+                hovered = entry.id
+            } else if hovered == entry.id {
+                hovered = nil
+            }
+        }
+        .accessibilityLabel(entry.title)
+        .accessibilityAddTraits(isActive ? AccessibilityTraits.isSelected : [])
+        .help(entry.title)
+    }
+}
+
+// MARK: - Transcript
 
 private struct TranscriptView: View {
     @ObservedObject var model: ChatModel
@@ -166,6 +389,10 @@ private struct TranscriptView: View {
                     }
                 }
                 .coordinateSpace(name: "transcript")
+                .onAppear {
+                    following = true
+                    reader.scrollTo("latest", anchor: .bottom)
+                }
                 .onPreferenceChange(TranscriptFrame.self) { frame in
                     if frame.height != height {
                         height = frame.height
@@ -184,14 +411,18 @@ private struct TranscriptView: View {
 
     @ViewBuilder private func reply(_ exchange: ChatModel.Exchange) -> some View {
         if case .replying = exchange.state, let source = model.activeSource {
-            LiveReply(source: source, config: Self.streamingMarkdown)
+            LiveReply(activity: model.replyActivity, source: source, config: Self.streamingMarkdown)
         } else {
             if !exchange.reply.isEmpty { MarkdownView(text: exchange.reply, config: Self.markdown) }
+            if !exchange.reasoningSummary.isEmpty {
+                ReasoningSummaryDisclosure(summary: exchange.reasoningSummary)
+            }
             switch exchange.state {
             case .stopped:
                 Text("Reply stopped").font(.caption).foregroundStyle(.secondary)
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(.red)
+                    .textSelection(.enabled)
                     .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                     .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
             default: EmptyView()
@@ -206,22 +437,102 @@ private struct TranscriptFrame: PreferenceKey {
 }
 
 private struct LiveReply: View {
+    let activity: ReplyActivity
     let source: ReplySource
     let config: MarkdownRenderConfig
     @State private var hasText = false
 
     var body: some View {
-        StreamedMarkdownView(source: source, config: config)
-            .overlay(alignment: .topLeading) {
-                if !hasText {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Waiting for a reply…").foregroundStyle(.secondary)
-                    }.font(.callout)
+        VStack(alignment: .leading, spacing: 8) {
+            if !hasText { ActivityStatus(activity: activity) }
+            StreamedMarkdownView(source: source, config: config)
+        }
+        .onReceive(source.hasText) { hasText = $0 }
+    }
+}
+
+/// Provider-reported progress only: waiting, thinking, or an actual reasoning summary.
+private struct ActivityStatus: View {
+    let activity: ReplyActivity
+
+    var body: some View {
+        switch activity {
+        case .waiting:
+            HStack(spacing: 8) {
+                BarsLoader(label: "Waiting for a reply")
+                Text("Waiting for a reply…")
+            }
+            .font(.callout)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Waiting for a reply")
+            .accessibilityAddTraits(.updatesFrequently)
+        case .thinking:
+            HStack(spacing: 8) {
+                BarsLoader(label: "Thinking")
+                Text("Thinking…")
+            }
+            .font(.callout)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Thinking")
+            .accessibilityAddTraits(.updatesFrequently)
+        case .summary(let text):
+            HStack(alignment: .top, spacing: 8) {
+                BarsLoader(label: "Thinking").padding(.top, 2)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Reasoning summary")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(text)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(6)
+                        .truncationMode(.head)
+                        .textSelection(.enabled)
+                        .accessibilityLabel("Reasoning summary: \(text)")
                 }
             }
-            .frame(minHeight: hasText ? 0 : 24, alignment: .topLeading)
-            .onReceive(source.hasText) { hasText = $0 }
+        }
+    }
+}
+
+private struct ReasoningSummaryDisclosure: View {
+    let summary: String
+    @State private var expanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                if reduceMotion {
+                    expanded.toggle()
+                } else {
+                    withAnimation(.snappy(duration: 0.2)) { expanded.toggle() }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .bold))
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                    Text("Reasoning summary")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Reasoning summary")
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+            if expanded {
+                Text(summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(9)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
     }
 }
 
@@ -234,13 +545,7 @@ struct AccountSettingsView: View {
                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.accentColor)
             if let account = model.account {
                 Text(account).textSelection(.enabled)
-                if !model.models.isEmpty {
-                    Picker("Model", selection: $model.selectedModel) {
-                        ForEach(model.models) { option in Text(option.name).tag(option.id) }
-                    }.disabled(model.replying || model.accountStatus != nil)
-                }
                 HStack {
-                    Button("Reload models", action: model.reloadModels)
                     Button("Reconnect", action: model.signIn)
                     Button("Sign out", action: model.signOut)
                 }.disabled(model.replying || model.accountStatus != nil)
@@ -248,7 +553,7 @@ struct AccountSettingsView: View {
                 Text("Use an eligible ChatGPT plan. No API key is required.").foregroundStyle(.secondary)
                 Button("Continue with ChatGPT", action: model.signIn).buttonStyle(.borderedProminent)
             }
-            if let status = model.accountStatus {
+            if let status = model.accountStatus, status != .loadingModels {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text(status.rawValue).foregroundStyle(.secondary)
