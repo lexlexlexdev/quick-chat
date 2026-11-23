@@ -3,18 +3,46 @@ import Combine
 import SwiftUI
 import WebKit
 
-struct TranscriptView: NSViewRepresentable {
+struct TranscriptView: View {
+    let exchanges: [ChatModel.Exchange]
+    let source: ReplySource?
+    let activity: ReplyActivity
+    @State private var failed = false
+    @State private var attempt = 0
+
+    var body: some View {
+        TranscriptWebView(exchanges: exchanges, source: source, activity: activity, failed: $failed)
+            .id(attempt)
+            .opacity(failed ? 0 : 1)
+            .overlay {
+                if failed {
+                    VStack(spacing: 10) {
+                        Text("Couldn’t display the transcript.")
+                        Button("Reload transcript") {
+                            failed = false
+                            attempt += 1
+                        }
+                    }
+                }
+            }
+    }
+}
+
+private struct TranscriptWebView: NSViewRepresentable {
     let exchanges: [ChatModel.Exchange]
     let source: ReplySource?
     let activity: ReplyActivity
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    @Binding var failed: Bool
+
+    func makeCoordinator() -> Coordinator { Coordinator(failed: $failed) }
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(context.coordinator, name: "copyCode")
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.underPageBackgroundColor = .windowBackgroundColor
         webView.navigationDelegate = context.coordinator
         context.coordinator.attach(webView)
         return webView
@@ -32,9 +60,6 @@ struct TranscriptView: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
-        private static let page = Bundle.module.resourceURL!
-            .appendingPathComponent("TranscriptAssets", isDirectory: true)
-            .appendingPathComponent("transcript.html")
         private weak var view: WKWebView?
         private weak var source: ReplySource?
         private var subscription: AnyCancellable?
@@ -45,10 +70,34 @@ struct TranscriptView: NSViewRepresentable {
         private var turnsDirty = true
         private var sending = false
         private var scheduled: Task<Void, Never>?
+        private let failed: Binding<Bool>
+
+        init(failed: Binding<Bool>) {
+            self.failed = failed
+        }
 
         func attach(_ view: WKWebView) {
             self.view = view
-            view.loadFileURL(Self.page, allowingReadAccessTo: Self.page.deletingLastPathComponent())
+            loadDocument(in: view)
+        }
+
+        private func loadDocument(in view: WKWebView) {
+            switch TranscriptDocument.bundled {
+            case .success(let html):
+                view.loadHTMLString(html, baseURL: nil)
+            case .failure(let error):
+                reportFailure(error)
+            }
+        }
+
+        private func reportFailure(_ error: Error) {
+            ready = false
+            let details = error as NSError
+            NSLog("Quick Chat transcript failed (%@ %ld)", details.domain, details.code)
+            Task { [weak self] in
+                guard let self, view != nil else { return }
+                failed.wrappedValue = true
+            }
         }
 
         func detach() {
@@ -117,13 +166,17 @@ struct TranscriptView: NSViewRepresentable {
             dirty = false
             let turnPayload: Any = turnsDirty ? turns : NSNull()
             turnsDirty = false
-            view.callAsyncJavaScript("window.updateTranscript(turns, liveText)",
+            view.callAsyncJavaScript("return window.updateTranscript(turns, liveText)",
                                      arguments: ["turns": turnPayload, "liveText": liveText],
                                      in: nil, in: .page) { [weak self] result in
                 guard let self else { return }
                 self.sending = false
-                if case .failure(let error) = result {
-                    NSLog("Quick Chat transcript update failed (%@)", String(describing: type(of: error)))
+                switch result {
+                case .success(let value) where value as? Bool == true: break
+                case .success:
+                    self.reportFailure(WKError(.javaScriptResultTypeIsUnsupported))
+                case .failure(let error):
+                    self.reportFailure(error)
                 }
                 self.scheduleUpdate()
             }
@@ -136,21 +189,27 @@ struct TranscriptView: NSViewRepresentable {
             sendUpdate()
         }
 
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            reportFailure(error)
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            reportFailure(error)
+        }
+
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            ready = false
-            scheduled?.cancel()
-            scheduled = nil
-            webView.loadFileURL(Self.page, allowingReadAccessTo: Self.page.deletingLastPathComponent())
+            reportFailure(WKError(.webContentProcessTerminated))
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            guard let url = action.request.url else { decisionHandler(.cancel); return }
-            if !ready, url == Self.page, action.targetFrame?.isMainFrame == true {
+            let url = action.request.url
+            if !ready, action.navigationType == .other, action.targetFrame?.isMainFrame != false,
+               url == nil || url?.absoluteString == "about:blank" {
                 decisionHandler(.allow)
                 return
             }
-            if action.navigationType == .linkActivated, url.scheme == "https" {
+            if action.navigationType == .linkActivated, let url, url.scheme == "https" {
                 NSWorkspace.shared.open(url)
             }
             decisionHandler(.cancel)

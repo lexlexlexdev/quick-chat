@@ -210,6 +210,7 @@
             if (turn?.status === "replying") patch(states.get(turn.id), turn, snapshot, range);
         }
         if (following) follow();
+        return true;
     };
 
     function flushPending() {
