@@ -132,6 +132,7 @@ struct ChatView: View {
                     .focused($composerFocused)
                     .accessibilityLabel("Message")
                     .frame(height: 63)
+                    .background(ComposerReturnKeys(focused: composerFocused, send: model.send))
                 if model.draft.isEmpty {
                     Text("Message ChatGPT…")
                         .foregroundStyle(.secondary)
@@ -163,17 +164,16 @@ struct ChatView: View {
 
     private var sendButton: some View {
         Button(action: model.send) {
-            Text("⌘↩")
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
+            Text("Enter")
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(model.canSend ? Color.accentColor : Color.secondary.opacity(0.6))
                 .frame(minWidth: 34, minHeight: 24)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .keyboardShortcut(.return, modifiers: .command)
         .disabled(!model.canSend)
         .accessibilityLabel("Send message")
-        .help("Send message (⌘↩)")
+        .help("Send with Enter. Use Shift–Enter for a new line.")
     }
 
     private var stopButton: some View {
