@@ -13,6 +13,7 @@
 - Use the same light and dark surface for the popup and transcript, with a compact header and composer.
 - Hide the WebKit pane until the first transcript update is ready, and omit the visible assistant sender label.
 - Inset transcript content so the overlay scrollbar doesn’t cover it.
+- Reuse the transcript’s WebKit view across chat switches to avoid a white flash.
 
 ## 1.0
 

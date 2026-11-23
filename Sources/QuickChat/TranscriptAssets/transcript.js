@@ -8,6 +8,7 @@
 
     const states = new Map();
     let turns = [];
+    let chatID = null;
     let selecting = false;
 
     var hasMarkdown = typeof window.markdownit === "function";
@@ -189,9 +190,18 @@
         document.scrollingElement.scrollTop = document.scrollingElement.scrollHeight;
     }
 
-    window.updateTranscript = function (updatedTurns, snapshot) {
+    window.updateTranscript = function (nextChatID, updatedTurns, snapshot) {
+        const switched = chatID !== nextChatID;
+        if (switched) {
+            chatID = nextChatID;
+            window.getSelection()?.removeAllRanges();
+            transcript.replaceChildren();
+            states.clear();
+            turns = [];
+            selecting = false;
+        }
         const range = selectionRange();
-        const following = !selecting && !range && atBottom();
+        const following = switched || (!selecting && !range && atBottom());
         if (updatedTurns !== null) {
             turns = updatedTurns;
             for (const turn of turns) {

@@ -4,6 +4,7 @@ import SwiftUI
 import WebKit
 
 struct TranscriptView: View {
+    let chatID: UUID
     let exchanges: [ChatModel.Exchange]
     let source: ReplySource?
     let activity: ReplyActivity
@@ -11,13 +12,12 @@ struct TranscriptView: View {
     @State private var attempt = 0
 
     var body: some View {
-        TranscriptWebView(exchanges: exchanges, source: source, activity: activity, phase: $phase)
+        TranscriptWebView(chatID: chatID, exchanges: exchanges, source: source, activity: activity, phase: $phase)
             .id(attempt)
-            .opacity(phase == .visible ? 1 : 0)
-            .allowsHitTesting(phase == .visible)
-            .accessibilityHidden(phase != .visible)
+            .allowsHitTesting(phase == .visible && !exchanges.isEmpty)
+            .accessibilityHidden(phase != .visible || exchanges.isEmpty)
             .overlay {
-                if phase == .failed {
+                if phase == .failed && !exchanges.isEmpty {
                     VStack(spacing: 10) {
                         Text("Couldn’t display the transcript.")
                         Button("Reload transcript") {
@@ -35,6 +35,7 @@ private enum TranscriptPhase {
 }
 
 private struct TranscriptWebView: NSViewRepresentable {
+    let chatID: UUID
     let exchanges: [ChatModel.Exchange]
     let source: ReplySource?
     let activity: ReplyActivity
@@ -48,6 +49,7 @@ private struct TranscriptWebView: NSViewRepresentable {
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(context.coordinator, name: "copyCode")
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.alphaValue = 0
         webView.underPageBackgroundColor = PopupSurface.color
         webView.navigationDelegate = context.coordinator
         context.coordinator.attach(webView)
@@ -55,7 +57,7 @@ private struct TranscriptWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: WKWebView, context: Context) {
-        context.coordinator.update(exchanges: exchanges, source: source, activity: activity)
+        context.coordinator.update(chatID: chatID, exchanges: exchanges, source: source, activity: activity)
     }
 
     static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) {
@@ -69,6 +71,7 @@ private struct TranscriptWebView: NSViewRepresentable {
         private weak var view: WKWebView?
         private weak var source: ReplySource?
         private var subscription: AnyCancellable?
+        private var chatID: UUID?
         private var turns: [[String: String]] = []
         private var liveText = ""
         private var ready = false
@@ -98,6 +101,7 @@ private struct TranscriptWebView: NSViewRepresentable {
 
         private func reportFailure(_ error: Error) {
             ready = false
+            view?.alphaValue = 0
             let details = error as NSError
             NSLog("Quick Chat transcript failed (%@ %ld)", details.domain, details.code)
             Task { [weak self] in
@@ -112,7 +116,13 @@ private struct TranscriptWebView: NSViewRepresentable {
             view = nil
         }
 
-        func update(exchanges: [ChatModel.Exchange], source: ReplySource?, activity: ReplyActivity) {
+        func update(chatID: UUID, exchanges: [ChatModel.Exchange], source: ReplySource?, activity: ReplyActivity) {
+            if self.chatID != chatID {
+                self.chatID = chatID
+                turnsDirty = true
+                dirty = true
+            }
+            if exchanges.isEmpty { view?.alphaValue = 0 }
             let nextTurns = exchanges.map { exchange in
                 var turn = ["id": exchange.id.uuidString, "prompt": exchange.prompt,
                             "reply": exchange.reply, "summary": exchange.reasoningSummary,
@@ -172,13 +182,26 @@ private struct TranscriptWebView: NSViewRepresentable {
             dirty = false
             let turnPayload: Any = turnsDirty ? turns : NSNull()
             turnsDirty = false
-            view.callAsyncJavaScript("return window.updateTranscript(turns, liveText)",
-                                     arguments: ["turns": turnPayload, "liveText": liveText],
+            let sentChatID = chatID
+            let hasContent = !turns.isEmpty
+            let awaitPaint = hasContent && view.alphaValue == 0
+            view.callAsyncJavaScript("""
+                const updated = window.updateTranscript(chatID, turns, liveText);
+                if (updated && awaitPaint) {
+                    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                }
+                return updated;
+                """,
+                                     arguments: ["chatID": sentChatID?.uuidString ?? "", "turns": turnPayload,
+                                                 "liveText": liveText, "awaitPaint": awaitPaint],
                                      in: nil, in: .page) { [weak self] result in
                 guard let self, self.view != nil else { return }
                 self.sending = false
                 switch result {
                 case .success(let value) where value as? Bool == true:
+                    if sentChatID == self.chatID && hasContent && !self.turns.isEmpty {
+                        self.view?.alphaValue = 1
+                    }
                     if self.phase.wrappedValue == .loading { self.phase.wrappedValue = .visible }
                 case .success:
                     self.reportFailure(WKError(.javaScriptResultTypeIsUnsupported))

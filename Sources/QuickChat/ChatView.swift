@@ -20,12 +20,12 @@ struct ChatView: View {
                 }
                 .font(.callout)
             }
-            if model.exchanges.isEmpty {
-                emptyState
-            } else {
-                TranscriptView(exchanges: model.exchanges, source: model.activeSource, activity: model.replyActivity)
-                    .id(model.activeChatID)
+            ZStack {
+                TranscriptView(chatID: model.activeChatID, exchanges: model.exchanges,
+                               source: model.activeSource, activity: model.replyActivity)
+                if model.exchanges.isEmpty { emptyState }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             if model.account != nil && model.historyLoaded { composer }
         }
         .padding(.horizontal, 20)
