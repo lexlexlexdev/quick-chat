@@ -25,13 +25,20 @@ struct ChatHistoryEntry: Identifiable {
 
 @MainActor
 final class ChatModel: ObservableObject {
-    struct Exchange: Identifiable {
-        enum State { case replying, complete, stopped, failed(String) }
-        let id = UUID()
+    struct Exchange: Identifiable, Codable {
+        enum State: Codable { case replying, complete, stopped, failed(String) }
+        let id: UUID
         let prompt: String
         var reply = ""
         var reasoningSummary = ""
         var state = State.replying
+
+        init(id: UUID = UUID(), prompt: String, reply: String = "", state: State = .replying) {
+            self.id = id
+            self.prompt = prompt
+            self.reply = reply
+            self.state = state
+        }
     }
 
     @Published private(set) var account: String?
@@ -39,6 +46,7 @@ final class ChatModel: ObservableObject {
     @Published private(set) var accountStatus: AccountStatus? = .checking
     @Published private(set) var models: [ChatModelOption] = []
     @Published private(set) var modelError: String?
+    @Published private(set) var historyError: String?
     @Published var selectedModel = UserDefaults.standard.string(forKey: "chatModel") ?? "" {
         didSet { UserDefaults.standard.set(selectedModel, forKey: "chatModel") }
     }
@@ -47,6 +55,9 @@ final class ChatModel: ObservableObject {
     @Published private(set) var replyActivity: ReplyActivity = .waiting
     @Published private(set) var activeSource: ReplySource?
     private var accountTask: Task<Void, Never>?
+    private var draftSaveTask: Task<Void, Never>?
+    private var historyScope: String?
+    private var historyStore: ChatHistoryStore?
     private var replyTask: Task<Void, Never>?
     private let auth = ChatGPTAuth()
     private let client = ResponsesClient()
@@ -69,22 +80,33 @@ final class ChatModel: ObservableObject {
     }
     var draft: String {
         get { conversations.active.draft }
-        set { conversations.active.draft = newValue }
+        set {
+            guard conversations.active.draft != newValue else { return }
+            conversations.active.draft = newValue
+            draftSaveTask?.cancel()
+            draftSaveTask = Task { [weak self] in
+                do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+                self?.flushHistory()
+            }
+        }
     }
     var exchanges: [Exchange] { conversations.active.exchanges }
     var activeChatID: UUID { conversations.active.id }
     var history: [ChatHistoryEntry] { conversations.entries }
+    var historyLoaded: Bool { historyStore != nil }
     var ready: Bool { account != nil && currentModel != nil }
     var canSend: Bool {
-        ready && accountStatus == nil && !replying && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ready && historyLoaded && accountStatus == nil && !replying && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     init() {
         accountTask = Task {
             defer { accountStatus = nil; accountTask = nil }
             do {
-                account = try await auth.account()
-                if account != nil { await loadModels() }
+                if let session = try await auth.account() {
+                    connect(session)
+                    await loadModels()
+                }
             } catch { accountError = Self.message(for: error) }
         }
     }
@@ -96,7 +118,8 @@ final class ChatModel: ObservableObject {
         accountTask = Task {
             defer { accountStatus = nil; accountTask = nil }
             do {
-                account = try await auth.signIn { NSWorkspace.shared.open($0) }
+                let session = try await auth.signIn { NSWorkspace.shared.open($0) }
+                connect(session)
                 models = []
                 await loadModels()
             } catch {
@@ -132,6 +155,10 @@ final class ChatModel: ObservableObject {
 
     func signOut() {
         guard accountTask == nil, !replying else { return }
+        if historyLoaded && !flushHistory() {
+            accountError = "Couldn’t save this chat. Retry in the chat panel before signing out."
+            return
+        }
         accountStatus = .signingOut
         accountError = nil
         accountTask = Task {
@@ -150,17 +177,69 @@ final class ChatModel: ObservableObject {
         account = nil
         models = []
         modelError = nil
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+        historyStore = nil
+        historyScope = nil
+        historyError = nil
         conversations = ChatHistory()
     }
 
+    private func connect(_ session: ConnectedChatGPTAccount) {
+        if historyScope != session.historyScope {
+            conversations = ChatHistory()
+            historyStore = nil
+            historyScope = session.historyScope
+        }
+        if !historyLoaded { restoreHistory() }
+        account = session.label
+    }
+
+    func retryHistory() {
+        if historyLoaded { flushHistory() } else { restoreHistory() }
+    }
+
+    private func restoreHistory() {
+        guard let historyScope else { return }
+        do {
+            let store = try ChatHistoryStore(scope: historyScope)
+            let restored = try store.load()
+            historyStore = store
+            conversations = restored
+            historyError = nil
+        } catch {
+            historyError = "Couldn’t load local chat history."
+        }
+    }
+
+    @discardableResult
+    func flushHistory() -> Bool {
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+        return persist(conversations.active)
+    }
+
+    private func persist(_ conversation: ChatHistory.Conversation) -> Bool {
+        guard let historyStore else { return false }
+        do {
+            try historyStore.save(conversation)
+            historyError = nil
+            return true
+        } catch {
+            historyError = "Couldn’t save this chat."
+            return false
+        }
+    }
+
     func newChat() {
-        guard !replying else { return }
+        guard !replying, flushHistory() else { return }
         conversations.startNew()
     }
 
     func selectChat(_ id: UUID) {
-        guard !replying else { return }
+        guard !replying, id != activeChatID, flushHistory() else { return }
         conversations.select(id)
+        flushHistory()
     }
 
     func send() {
@@ -172,8 +251,13 @@ final class ChatModel: ObservableObject {
             turns.append(ChatTurn(role: .assistant, text: exchange.reply))
         }
         turns.append(ChatTurn(role: .user, text: prompt))
-        conversations.active.draft = ""
-        conversations.active.exchanges.append(Exchange(prompt: prompt))
+        var pending = conversations.active
+        pending.draft = ""
+        pending.exchanges.append(Exchange(prompt: prompt))
+        guard persist(pending) else { return }
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+        conversations.active = pending
         let index = conversations.active.exchanges.count - 1
         let source = ReplySource()
         let model = selectedModel
@@ -212,6 +296,7 @@ final class ChatModel: ObservableObject {
         exchange.reasoningSummary = summary
         exchange.state = state
         conversations.active.exchanges[index] = exchange
+        flushHistory()
     }
 
     func stop() { replyTask?.cancel() }
@@ -228,11 +313,18 @@ final class ChatModel: ObservableObject {
 }
 
 struct ChatHistory {
-    struct Conversation {
-        let id = UUID()
+    struct Conversation: Codable {
+        let id: UUID
         let order: Int
         var draft = ""
         var exchanges: [ChatModel.Exchange] = []
+
+        init(id: UUID = UUID(), order: Int, draft: String = "", exchanges: [ChatModel.Exchange] = []) {
+            self.id = id
+            self.order = order
+            self.draft = draft
+            self.exchanges = exchanges
+        }
 
         var entry: ChatHistoryEntry? {
             let text = (exchanges.first?.prompt ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -244,6 +336,13 @@ struct ChatHistory {
     var active = Conversation(order: 0)
     private var archived: [Conversation] = []
     private var nextOrder = 1
+
+    init(restoring conversations: [Conversation] = []) {
+        guard let first = conversations.first else { return }
+        active = first
+        archived = Array(conversations.dropFirst())
+        nextOrder = (conversations.lazy.map(\.order).max() ?? 0) + 1
+    }
 
     var entries: [ChatHistoryEntry] {
         var chats = archived

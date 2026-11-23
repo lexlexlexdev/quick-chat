@@ -53,7 +53,7 @@ struct ChatModelOption: Identifiable, Equatable {
 
     func preferredReasoning(_ saved: ReasoningLevel?) -> ReasoningLevel? {
         if let saved, reasoningLevels.contains(saved) { return saved }
-        return reasoningLevels.contains(.medium) ? .medium : reasoningLevels.first
+        return reasoningLevels.contains(.none) ? ReasoningLevel.none : reasoningLevels.first
     }
 }
 

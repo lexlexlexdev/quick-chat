@@ -164,9 +164,9 @@ import Testing
     let options = try ResponsesClient.decodeCatalog(Data(catalog.utf8))
     #expect(options[0].reasoningLevels == [.none, .low, .medium, .high, .xhigh, .max])
     #expect(options[1].reasoningLevels == [.none, .low, .medium, .high, .xhigh, .max])
-    #expect(options[0].preferredReasoning(nil) == .medium)
-    #expect(options[0].preferredReasoning(.minimal) == .medium)
-    #expect(options[0].preferredReasoning(ReasoningLevel.none) == ReasoningLevel.none)
+    #expect(options[0].preferredReasoning(nil) == ReasoningLevel.none)
+    #expect(options[0].preferredReasoning(.minimal) == ReasoningLevel.none)
+    #expect(options[0].preferredReasoning(.high) == .high)
 }
 
 @Test

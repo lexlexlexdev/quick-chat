@@ -2,6 +2,11 @@ import CryptoKit
 import Foundation
 import Security
 
+struct ConnectedChatGPTAccount: Sendable {
+    let label: String
+    let historyScope: String
+}
+
 /// Sign-in failures surfaced by `ChatGPTAuth`. Messages are safe to show and
 /// never contain tokens, authorization codes, or key material.
 enum ChatGPTAuthError: LocalizedError {
@@ -359,20 +364,19 @@ actor ChatGPTAuth {
 
     // MARK: - Public API
 
-    /// Display label (the account email when available) or nil when signed out.
-    /// A saved registration with no tokens is signed out so Settings offers
+    /// A saved registration with no tokens is signed out, so Settings offers
     /// Continue and reuses that registration.
-    func account() throws -> String? {
+    func account() throws -> ConnectedChatGPTAccount? {
         let state = try loadState()
         guard let account = state.account else { return nil }
         let signedIn = account.accessToken?.isEmpty == false || account.refreshToken?.isEmpty == false
         guard signedIn else { return nil }
-        return Self.displayName(for: account)
+        return Self.connectedAccount(account)
     }
 
     /// Runs a fresh ChatGPT dynamic-client registration, PKCE browser sign-in,
-    /// loopback callback, and signed-identity validation. Returns the label.
-    func signIn(openBrowser: @escaping @MainActor (URL) -> Bool) async throws -> String {
+    /// loopback callback, and signed-identity validation.
+    func signIn(openBrowser: @escaping @MainActor (URL) -> Bool) async throws -> ConnectedChatGPTAccount {
         guard !signInActive else { throw ChatGPTAuthError.signInAlreadyInProgress }
         signInActive = true
         defer { signInActive = false }
@@ -473,7 +477,13 @@ actor ChatGPTAuth {
 
         // A sign-in without the plan scope is retained, but `accessToken()`
         // refuses to produce a token until plan usage is granted.
-        return Self.displayName(for: issued)
+        return Self.connectedAccount(issued)
+    }
+
+    private static func connectedAccount(_ account: AuthAccount) -> ConnectedChatGPTAccount {
+        let identity = [account.issuer, account.clientID, account.subject].joined(separator: "\u{0}")
+        return ConnectedChatGPTAccount(label: displayName(for: account),
+                                       historyScope: base64URL(Data(SHA256.hash(data: Data(identity.utf8)))))
     }
 
     /// Returns a usable access token, refreshing it when needed.

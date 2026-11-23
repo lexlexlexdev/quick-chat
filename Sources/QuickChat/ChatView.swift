@@ -14,12 +14,20 @@ struct ChatView: View {
         VStack(alignment: .leading, spacing: 16) {
             header
             Divider()
+            if let error = model.historyError {
+                HStack {
+                    Label(error, systemImage: "exclamationmark.circle")
+                    Spacer()
+                    Button("Retry", action: model.retryHistory)
+                }
+                .font(.callout)
+            }
             if model.exchanges.isEmpty {
                 emptyState
             } else {
                 TranscriptView(model: model).id(model.activeChatID)
             }
-            if model.account != nil { composer }
+            if model.account != nil && model.historyLoaded { composer }
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -28,6 +36,7 @@ struct ChatView: View {
         .clipShape(panelShape)
         .onChange(of: focusRequest, initial: true) { _, _ in focusComposer() }
         .onChange(of: model.ready) { _, ready in if ready { focusComposer() } }
+        .onChange(of: model.historyLoaded) { _, loaded in if loaded { focusComposer() } }
         .onChange(of: model.activeChatID) { _, _ in if !showingHistory { focusComposer() } }
         .onChange(of: showingHistory) { _, shown in if !shown { focusComposer() } }
         .onExitCommand(perform: hide)
@@ -84,6 +93,8 @@ struct ChatView: View {
                     Text("Use an eligible ChatGPT plan. No API key is required.").foregroundStyle(.secondary)
                 }
                 Button("Open Settings", action: openSettings).buttonStyle(.borderedProminent)
+            } else if !model.historyLoaded {
+                EmptyView()
             } else if model.models.isEmpty {
                 Text("No models available").font(.system(size: 20, weight: .semibold))
                 Text(model.modelError ?? "Reload the model list, then pick a model in the composer.")

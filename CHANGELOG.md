@@ -3,8 +3,8 @@
 ## Unreleased
 
 - Read valid ChatGPT reply streams even if the server omits or mislabels `Content-Type`. Report provider errors and unexpected response formats separately.
-- Pick GPT-6 Luna or GPT-6.1 Terra and an explicit reasoning level in the chat panel. Settings is for connecting ChatGPT; configure the global shortcut via **Keyboard Shortcut…** in the menu bar.
-- Start a new chat without deleting the previous one. The history picker keeps conversations and drafts until you quit or sign out.
+- Pick GPT-6 Luna or GPT-6.1 Terra and an explicit reasoning level in the chat panel. The app starts at None when supported and remembers your selection for each model. Configure the global shortcut via **Keyboard Shortcut…** in the menu bar.
+- Chats and drafts are stored in local SQLite at `~/Library/Application Support/Quick Chat/history.sqlite3`. History survives restarts and is visible only after connecting the same ChatGPT account registration. Signing out leaves history on disk.
 - The waiting indicator shows provider progress and public reasoning summaries when available. Send by clicking `⌘↩` or pressing the same shortcut.
 
 ## 1.0
