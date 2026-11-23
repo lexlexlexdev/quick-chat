@@ -52,19 +52,29 @@ final class ChatModel: ObservableObject {
     }
     @Published private var conversations = ChatHistory()
     @Published private var reasoningPreferences = UserDefaults.standard.dictionary(forKey: "reasoningByModel") as? [String: String] ?? [:]
-    @Published private(set) var replyActivity: ReplyActivity = .waiting
-    @Published private(set) var activeSource: ReplySource?
+    private struct LiveStream {
+        let source: ReplySource
+        let task: Task<Void, Never>
+        var activity = ReplyActivity.waiting
+    }
+
+    @Published private var liveStreams: [UUID: LiveStream] = [:]
     private var accountTask: Task<Void, Never>?
     private var draftSaveTask: Task<Void, Never>?
     private var historyScope: String?
     private var historyStore: ChatHistoryStore?
-    private var replyTask: Task<Void, Never>?
+    private var unsavedReplies: [UUID: ChatHistory.Conversation] = [:]
     private let auth = ChatGPTAuth()
     private let client = ResponsesClient()
 
     enum AccountStatus: String { case checking = "Checking sign-in…", signingIn = "Waiting for ChatGPT sign-in…", loadingModels = "Loading models…", signingOut = "Signing out…" }
 
-    var replying: Bool { activeSource != nil }
+    var hasRunningReplies: Bool { !liveStreams.isEmpty }
+    var replying: Bool { isStreaming(activeChatID) }
+    var activeSource: ReplySource? { liveStreams[activeChatID]?.source }
+    var replyActivity: ReplyActivity { liveStreams[activeChatID]?.activity ?? .waiting }
+
+    func isStreaming(_ chatID: UUID) -> Bool { liveStreams[chatID] != nil }
     var currentModel: ChatModelOption? { models.first { $0.id == selectedModel } }
     var selectedReasoning: ReasoningLevel? {
         get {
@@ -112,7 +122,7 @@ final class ChatModel: ObservableObject {
     }
 
     func signIn() {
-        guard accountTask == nil, !replying else { return }
+        guard accountTask == nil, !hasRunningReplies else { return }
         accountError = nil
         accountStatus = .signingIn
         accountTask = Task {
@@ -154,7 +164,7 @@ final class ChatModel: ObservableObject {
     }
 
     func signOut() {
-        guard accountTask == nil, !replying else { return }
+        guard accountTask == nil, !hasRunningReplies else { return }
         if historyLoaded && !flushHistory() {
             accountError = "Couldn’t save this chat. Retry in the chat panel before signing out."
             return
@@ -181,6 +191,7 @@ final class ChatModel: ObservableObject {
         draftSaveTask = nil
         historyStore = nil
         historyScope = nil
+        unsavedReplies.removeAll()
         historyError = nil
         conversations = ChatHistory()
     }
@@ -189,6 +200,7 @@ final class ChatModel: ObservableObject {
         if historyScope != session.historyScope {
             conversations = ChatHistory()
             historyStore = nil
+            unsavedReplies.removeAll()
             historyScope = session.historyScope
         }
         if !historyLoaded { restoreHistory() }
@@ -216,14 +228,19 @@ final class ChatModel: ObservableObject {
     func flushHistory() -> Bool {
         draftSaveTask?.cancel()
         draftSaveTask = nil
-        return persist(conversations.active)
+        guard persist(conversations.active) else { return false }
+        for conversation in unsavedReplies.values {
+            guard persist(conversation) else { return false }
+        }
+        return true
     }
 
     private func persist(_ conversation: ChatHistory.Conversation) -> Bool {
         guard let historyStore else { return false }
         do {
             try historyStore.save(conversation)
-            historyError = nil
+            unsavedReplies[conversation.id] = nil
+            if unsavedReplies.isEmpty { historyError = nil }
             return true
         } catch {
             historyError = "Couldn’t save this chat."
@@ -232,20 +249,12 @@ final class ChatModel: ObservableObject {
     }
 
     func newChat() {
-        guard !replying, flushHistory() else { return }
+        guard flushHistory() else { return }
         conversations.startNew()
     }
 
-    func startChatFromHotkey() async {
-        if let replyTask {
-            stop()
-            await replyTask.value
-        }
-        newChat()
-    }
-
     func selectChat(_ id: UUID) {
-        guard !replying, id != activeChatID, flushHistory() else { return }
+        guard id != activeChatID, flushHistory() else { return }
         conversations.select(id)
         flushHistory()
     }
@@ -261,20 +270,20 @@ final class ChatModel: ObservableObject {
         turns.append(ChatTurn(role: .user, text: prompt))
         var pending = conversations.active
         pending.draft = ""
-        pending.exchanges.append(Exchange(prompt: prompt))
+        let exchange = Exchange(prompt: prompt)
+        pending.exchanges.append(exchange)
         guard persist(pending) else { return }
         draftSaveTask?.cancel()
         draftSaveTask = nil
         conversations.active = pending
-        let index = conversations.active.exchanges.count - 1
+        let chatID = pending.id
+        let exchangeID = exchange.id
         let source = ReplySource()
         let model = selectedModel
         let reasoning = selectedReasoning
         let requestSummary = reasoning.map { $0 != .none } ?? false
-        replyActivity = .waiting
-        activeSource = source
-        replyTask = Task {
-            defer { activeSource = nil; replyTask = nil }
+        let task = Task {
+            defer { liveStreams[chatID] = nil }
             var partial = ""
             var summary = ""
             do {
@@ -282,8 +291,8 @@ final class ChatModel: ObservableObject {
                 let final = try await client.stream(model: model, turns: turns, token: token,
                                                     reasoning: reasoning, requestSummary: requestSummary,
                                                     onActivity: { activity in
-                    guard !Task.isCancelled, replyActivity != activity else { return }
-                    replyActivity = activity
+                    guard !Task.isCancelled, liveStreams[chatID]?.activity != activity else { return }
+                    liveStreams[chatID]?.activity = activity
                     if case .summary(let text) = activity { summary = text }
                 }) { snapshot in
                     guard !Task.isCancelled else { return }
@@ -291,23 +300,22 @@ final class ChatModel: ObservableObject {
                     source.update(snapshot)
                 }
                 try Task.checkCancellation()
-                finishReply(index, text: final, summary: summary, state: .complete)
+                finishReply(chatID: chatID, exchangeID: exchangeID, text: final, summary: summary, state: .complete)
             } catch {
-                finishReply(index, text: partial, summary: summary, state: Task.isCancelled ? .stopped : .failed(Self.message(for: error)))
+                finishReply(chatID: chatID, exchangeID: exchangeID, text: partial, summary: summary,
+                            state: Task.isCancelled ? .stopped : .failed(Self.message(for: error)))
             }
         }
+        liveStreams[chatID] = LiveStream(source: source, task: task)
     }
 
-    private func finishReply(_ index: Int, text: String, summary: String, state: Exchange.State) {
-        var exchange = conversations.active.exchanges[index]
-        exchange.reply = text
-        exchange.reasoningSummary = summary
-        exchange.state = state
-        conversations.active.exchanges[index] = exchange
-        flushHistory()
+    private func finishReply(chatID: UUID, exchangeID: UUID, text: String, summary: String, state: Exchange.State) {
+        guard let updated = conversations.finishReply(chatID: chatID, exchangeID: exchangeID,
+                                                      text: text, summary: summary, state: state) else { return }
+        if !persist(updated) { unsavedReplies[chatID] = updated }
     }
 
-    func stop() { replyTask?.cancel() }
+    func stop() { liveStreams[activeChatID]?.task.cancel() }
 
     private func isComplete(_ exchange: Exchange) -> Bool {
         if case .complete = exchange.state { return true }
@@ -371,5 +379,22 @@ struct ChatHistory {
         let selected = archived.remove(at: index)
         if active.entry != nil { archived.append(active) }
         active = selected
+    }
+
+    mutating func finishReply(chatID: UUID, exchangeID: UUID, text: String, summary: String,
+                              state: ChatModel.Exchange.State) -> Conversation? {
+        func update(_ chat: inout Conversation) -> Bool {
+            guard let index = chat.exchanges.indices.last, chat.exchanges[index].id == exchangeID,
+                  case .replying = chat.exchanges[index].state else { return false }
+            chat.exchanges[index].reply = text
+            chat.exchanges[index].reasoningSummary = summary
+            chat.exchanges[index].state = state
+            return true
+        }
+
+        if active.id == chatID { return update(&active) ? active : nil }
+        guard let index = archived.firstIndex(where: { $0.id == chatID }),
+              update(&archived[index]) else { return nil }
+        return archived[index]
     }
 }

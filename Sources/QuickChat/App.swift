@@ -97,10 +97,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func openFreshChat() {
-        Task { @MainActor in
-            await model.startChatFromHotkey()
-            showPanel()
-        }
+        model.newChat()
+        showPanel()
     }
 
     /// Panels become key only here, on an explicit open. The nonactivating style lets the

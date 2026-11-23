@@ -58,14 +58,13 @@ struct ChatView: View {
             }
             Spacer()
             iconButton("History", icon: "clock.arrow.circlepath") { showingHistory.toggle() }
-                .disabled(model.replying)
-                .help(model.replying ? "History is unavailable while a reply is running" : "History")
                 .popover(isPresented: $showingHistory, arrowEdge: .bottom) {
-                    ChatHistoryList(model: model, select: model.selectChat)
+                    ChatHistoryList(model: model) { id in
+                        model.selectChat(id)
+                        if model.activeChatID == id { showingHistory = false }
+                    }
                 }
             iconButton("New chat", icon: "square.and.pencil") { model.newChat(); focusComposer() }
-                .disabled(model.replying)
-                .help(model.replying ? "New chat is unavailable while a reply is running" : "New chat")
             iconButton("Settings", icon: "gearshape", action: openSettings)
             iconButton("Hide chat", icon: "xmark", action: hide)
         }
@@ -314,10 +313,17 @@ private struct ChatHistoryList: View {
     private func row(_ entry: ChatHistoryEntry) -> some View {
         let isActive = entry.id == model.activeChatID
         return Button { select(entry.id) } label: {
-            Text(entry.title)
+            HStack {
+                Text(entry.title)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if model.isStreaming(entry.id) {
+                    Spacer(minLength: 4)
+                    Image(systemName: "ellipsis.circle")
+                        .accessibilityHidden(true)
+                }
+            }
                 .font(.callout)
-                .lineLimit(1)
-                .truncationMode(.middle)
                 .foregroundStyle(isActive ? Color.accentColor : Color.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 10)
@@ -343,6 +349,7 @@ private struct ChatHistoryList: View {
             }
         }
         .accessibilityLabel(entry.title)
+        .accessibilityValue(model.isStreaming(entry.id) ? "Reply in progress" : "")
         .accessibilityAddTraits(isActive ? AccessibilityTraits.isSelected : [])
         .help(entry.title)
     }
@@ -548,7 +555,7 @@ struct AccountSettingsView: View {
                 HStack {
                     Button("Reconnect", action: model.signIn)
                     Button("Sign out", action: model.signOut)
-                }.disabled(model.replying || model.accountStatus != nil)
+                }.disabled(model.hasRunningReplies || model.accountStatus != nil)
             } else if model.accountStatus == nil {
                 Text("Use an eligible ChatGPT plan. No API key is required.").foregroundStyle(.secondary)
                 Button("Continue with ChatGPT", action: model.signIn).buttonStyle(.borderedProminent)

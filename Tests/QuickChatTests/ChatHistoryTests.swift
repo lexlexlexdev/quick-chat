@@ -88,6 +88,40 @@ import Testing
     }
 }
 
+@Test func backgroundReplyFinishesInOriginalChatWithoutChangingCurrentDraft() throws {
+    var history = ChatHistory()
+    let originatingChat = history.active.id
+    let exchange = ChatModel.Exchange(prompt: "First prompt")
+    history.active.exchanges.append(exchange)
+    history.startNew()
+    let foregroundChat = history.active.id
+    history.active.draft = "New draft"
+    history.active.exchanges.append(.init(prompt: "Second prompt"))
+
+    let result = history.finishReply(chatID: originatingChat, exchangeID: exchange.id,
+                                     text: "First answer", summary: "", state: .complete)
+    let completed = try #require(result)
+    #expect(completed.id == originatingChat)
+    #expect(history.active.id == foregroundChat)
+    #expect(history.active.draft == "New draft")
+    #expect(history.active.exchanges.last?.reply == "")
+    history.select(originatingChat)
+    #expect(history.active.exchanges.last?.reply == "First answer")
+}
+
+@Test func returningToStreamingChatReceivesTextProducedWhileAway() async {
+    let source = ReplySource()
+    var first = source.text.makeAsyncIterator()
+    source.update("Start")
+    let initial = await first.next()
+    #expect(initial == "Start")
+
+    source.update("Start plus background text")
+    var reopened = source.text.makeAsyncIterator()
+    let resumed = await reopened.next()
+    #expect(resumed == "Start plus background text")
+}
+
 private func withTemporaryHistoryFile(_ run: (URL) throws -> Void) throws {
     let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
