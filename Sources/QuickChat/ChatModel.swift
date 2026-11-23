@@ -57,13 +57,13 @@ final class ChatModel: ObservableObject {
     var currentModel: ChatModelOption? { models.first { $0.id == selectedModel } }
     var selectedReasoning: ReasoningLevel? {
         get {
-            guard let currentModel, let saved = reasoningPreferences[currentModel.id],
-                  let level = ReasoningLevel(rawValue: saved), currentModel.reasoningLevels.contains(level) else { return nil }
-            return level
+            guard let currentModel else { return nil }
+            let saved = reasoningPreferences[currentModel.id].flatMap(ReasoningLevel.init(rawValue:))
+            return currentModel.preferredReasoning(saved)
         }
         set {
-            guard let currentModel, newValue == nil || currentModel.reasoningLevels.contains(where: { $0 == newValue }) else { return }
-            reasoningPreferences[currentModel.id] = newValue?.rawValue
+            guard let currentModel, let newValue, currentModel.reasoningLevels.contains(newValue) else { return }
+            reasoningPreferences[currentModel.id] = newValue.rawValue
             UserDefaults.standard.set(reasoningPreferences, forKey: "reasoningByModel")
         }
     }
@@ -178,8 +178,7 @@ final class ChatModel: ObservableObject {
         let source = ReplySource()
         let model = selectedModel
         let reasoning = selectedReasoning
-        let requestSummary = currentModel?.reasoningLevels.contains(where: { $0 != .none }) == true
-            && reasoning != ReasoningLevel.none
+        let requestSummary = reasoning.map { $0 != .none } ?? false
         replyActivity = .waiting
         activeSource = source
         replyTask = Task {

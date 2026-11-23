@@ -118,19 +118,19 @@ import Testing
     #expect(noneReasoning["summary"] == nil)
 }
 
-@Test func chatGPTPlanCatalogUsesVisibleSlugsAndProviderDisplayOrder() throws {
+@Test func chatCatalogOffersOnlyVisibleLunaAndTerraInProviderOrder() throws {
     let catalog = """
     {"models":[
-      {"slug":"new-model","display_name":"New model","visibility":"list"},
-      {"slug":"private-model","display_name":"Hidden","visibility":"hidden"},
-      {"slug":"gpt-mini","display_name":"","visibility":"list"},
-      {"slug":"new-model","display_name":"New model","visibility":"list"}
+      {"slug":"other-model","visibility":"list"},
+      {"slug":"gpt-6-luna","visibility":"hidden"},
+      {"slug":"gpt-6.1-terra","visibility":"list"},
+      {"slug":"gpt-6-luna","visibility":"list"},
+      {"slug":"gpt-6.1-terra","visibility":"list"}
     ]}
     """
-    #expect(try ResponsesClient.decodeCatalog(Data(catalog.utf8)) == [
-        ChatModelOption(id: "new-model", name: "New model"),
-        ChatModelOption(id: "gpt-mini", name: "gpt-mini")
-    ])
+    let options = try ResponsesClient.decodeCatalog(Data(catalog.utf8))
+    #expect(options.map(\.id) == ["gpt-6.1-terra", "gpt-6-luna"])
+    #expect(options.map(\.name) == ["GPT-6.1 Terra", "GPT-6 Luna"])
 }
 
 @Test func catalogUsesAuthoritativeReasoningMetadataAndDropsUnknownEfforts() throws {
@@ -145,11 +145,11 @@ import Testing
         {"effort":"max","description":"Maximum"},
         {"effort":"ultra","description":"Unknown to this app"}
       ]},
-      {"slug":"gpt-5.5","display_name":"GPT-5.5","visibility":"list","supported_reasoning_levels":[]}
+      {"slug":"gpt-6.1-terra","visibility":"list","supported_reasoning_levels":[]}
     ]}
     """
     let options = try ResponsesClient.decodeCatalog(Data(catalog.utf8))
-    #expect(options.map(\.id) == ["gpt-6-luna", "gpt-5.5"])
+    #expect(options.map(\.id) == ["gpt-6-luna", "gpt-6.1-terra"])
     #expect(options[0].reasoningLevels == [.none, .low, .medium, .high, .xhigh, .max])
     #expect(options[1].reasoningLevels.isEmpty)
 }
@@ -158,14 +158,15 @@ import Testing
     let catalog = """
     {"models":[
       {"slug":"gpt-6-luna","display_name":"GPT-6-Luna","visibility":"list"},
-      {"slug":"gpt-6.1-sol","display_name":"GPT-6.1-Sol","visibility":"list"},
-      {"slug":"unverified-model","display_name":"Unverified","visibility":"list"}
+      {"slug":"gpt-6.1-terra","visibility":"list"}
     ]}
     """
     let options = try ResponsesClient.decodeCatalog(Data(catalog.utf8))
     #expect(options[0].reasoningLevels == [.none, .low, .medium, .high, .xhigh, .max])
-    #expect(options[1].reasoningLevels == [.low, .medium, .high, .xhigh, .max])
-    #expect(options[2].reasoningLevels.isEmpty)
+    #expect(options[1].reasoningLevels == [.none, .low, .medium, .high, .xhigh, .max])
+    #expect(options[0].preferredReasoning(nil) == .medium)
+    #expect(options[0].preferredReasoning(.minimal) == .medium)
+    #expect(options[0].preferredReasoning(ReasoningLevel.none) == ReasoningLevel.none)
 }
 
 @Test

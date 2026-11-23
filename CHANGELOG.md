@@ -3,9 +3,9 @@
 ## Unreleased
 
 - Read valid ChatGPT reply streams even if the server omits or mislabels `Content-Type`. Report provider errors and unexpected response formats separately.
-- Pick the model and its supported reasoning level in the chat panel. Settings is for connecting ChatGPT; configure the global shortcut via **Keyboard Shortcut…** in the menu bar.
+- Pick GPT-6 Luna or GPT-6.1 Terra and an explicit reasoning level in the chat panel. Settings is for connecting ChatGPT; configure the global shortcut via **Keyboard Shortcut…** in the menu bar.
 - Start a new chat without deleting the previous one. The history picker keeps conversations and drafts until you quit or sign out.
-- The waiting indicator shows provider progress and public reasoning summaries when available. Send with the return arrow or `⌘↩`.
+- The waiting indicator shows provider progress and public reasoning summaries when available. Send by clicking `⌘↩` or pressing the same shortcut.
 
 ## 1.0
 

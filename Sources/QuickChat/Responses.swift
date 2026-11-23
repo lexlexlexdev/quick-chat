@@ -50,6 +50,11 @@ struct ChatModelOption: Identifiable, Equatable {
         self.name = name
         self.reasoningLevels = reasoningLevels
     }
+
+    func preferredReasoning(_ saved: ReasoningLevel?) -> ReasoningLevel? {
+        if let saved, reasoningLevels.contains(saved) { return saved }
+        return reasoningLevels.contains(.medium) ? .medium : reasoningLevels.first
+    }
 }
 
 struct ResponsesClient {
@@ -84,29 +89,27 @@ struct ResponsesClient {
 
     static func decodeCatalog(_ data: Data) throws -> [ChatModelOption] {
         let catalog = try JSONDecoder().decode(ModelCatalog.self, from: data)
-        var seen: [String: String] = [:]
+        var seen = Set<String>()
         var options: [ChatModelOption] = []
         for entry in catalog.models where entry.visibility == "list" {
-            guard let id = entry.slug, !id.isEmpty, id.utf8.count <= 256,
-                  !id.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0) }) else {
-                throw ChatServiceError("ChatGPT returned an invalid model catalog.")
+            guard let id = entry.slug else { continue }
+            let label: String
+            switch id {
+            case "gpt-6-luna": label = "GPT-6 Luna"
+            case "gpt-6.1-terra": label = "GPT-6.1 Terra"
+            default: continue
             }
-            let name = entry.display_name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let label = name.isEmpty ? id : name
-            if let previous = seen.updateValue(label, forKey: id) {
-                guard previous == label else { throw ChatServiceError("ChatGPT returned conflicting model names.") }
-                continue
-            }
+            guard seen.insert(id).inserted else { continue }
             options.append(ChatModelOption(id: id, name: label, reasoningLevels: reasoningLevels(for: entry)))
         }
-        guard !options.isEmpty else { throw ChatServiceError("No chat models are available on this account.") }
+        guard !options.isEmpty else { throw ChatServiceError("GPT-6 Luna and GPT-6.1 Terra are unavailable on this account.") }
         return options
     }
 
     /// Catalog metadata wins. Only a missing field falls back to facts verified on OpenAI's model pages.
     private static func reasoningLevels(for entry: ModelCatalog.Entry) -> [ReasoningLevel] {
         guard let supported = entry.supported_reasoning_levels else {
-            return verifiedReasoningLevels(for: entry.slug ?? "")
+            return [.none, .low, .medium, .high, .xhigh, .max]
         }
         var seen = Set<ReasoningLevel>()
         var levels: [ReasoningLevel] = []
@@ -116,17 +119,6 @@ struct ResponsesClient {
             levels.append(level)
         }
         return levels
-    }
-
-    private static func verifiedReasoningLevels(for slug: String) -> [ReasoningLevel] {
-        switch slug {
-        case "gpt-6-luna", "gpt-6-sol", "gpt-6.1-terra":
-            return [.none, .low, .medium, .high, .xhigh, .max]
-        case "gpt-6-astra", "gpt-6.1-sol", "gpt-6.2-sol", "gpt-6.2-astra":
-            return [.low, .medium, .high, .xhigh, .max]
-        default:
-            return []
-        }
     }
 
     func stream(model: String, turns: [ChatTurn], token: String,
@@ -311,7 +303,6 @@ private struct ModelCatalog: Decodable {
 
     struct Entry: Decodable {
         let slug: String?
-        let display_name: String?
         let visibility: String?
         let supported_reasoning_levels: [Reasoning]?
     }

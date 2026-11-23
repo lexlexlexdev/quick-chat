@@ -129,7 +129,7 @@ struct ChatView: View {
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
             }
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 ModelMenu(model: model)
                 ReasoningMenu(model: model)
                 Spacer(minLength: 8)
@@ -153,10 +153,10 @@ struct ChatView: View {
 
     private var sendButton: some View {
         Button(action: model.send) {
-            Image(systemName: "return")
-                .font(.system(size: 13, weight: .semibold))
+            Text("⌘↩")
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
                 .foregroundStyle(model.canSend ? Color.accentColor : Color.secondary.opacity(0.6))
-                .frame(width: 24, height: 20)
+                .frame(minWidth: 34, minHeight: 24)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -171,7 +171,7 @@ struct ChatView: View {
             Image(systemName: "stop.fill")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 24, height: 20)
+                .frame(minWidth: 34, minHeight: 24)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -204,12 +204,12 @@ private struct ModelMenu: View {
             }
             Button("Reload models", action: model.reloadModels)
         } label: {
-            chip(title)
+            composerLabel(title, icon: "brain")
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .disabled(model.accountStatus != nil || model.replying)
-        .frame(maxWidth: 200, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
         .accessibilityLabel("Model")
         .accessibilityValue(title)
         .help("Model")
@@ -226,50 +226,39 @@ private struct ReasoningMenu: View {
     @ObservedObject var model: ChatModel
 
     var body: some View {
-        if let current = model.currentModel, !current.reasoningLevels.isEmpty {
+        if let current = model.currentModel, let selected = model.selectedReasoning {
             Menu {
-                Picker("Reasoning effort", selection: reasoningBinding) {
-                    Text("Default").tag(ReasoningLevel?.none)
+                Picker("Reasoning effort", selection: Binding(
+                    get: { model.selectedReasoning ?? selected },
+                    set: { model.selectedReasoning = $0 }
+                )) {
                     ForEach(current.reasoningLevels, id: \.self) { level in
-                        Text(level.label).tag(ReasoningLevel?.some(level))
+                        Text(level.label).tag(level)
                     }
                 }
                 .pickerStyle(.inline)
             } label: {
-                chip("Reasoning: \(label(for: current))")
+                composerLabel(selected.label, icon: "lightbulb")
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
+            .fixedSize(horizontal: true, vertical: false)
             .disabled(model.replying)
             .accessibilityLabel("Reasoning effort")
-            .accessibilityValue(label(for: current))
+            .accessibilityValue(selected.label)
             .help("Reasoning effort")
         }
     }
-
-    private var reasoningBinding: Binding<ReasoningLevel?> {
-        Binding(get: { model.selectedReasoning }, set: { model.selectedReasoning = $0 })
-    }
-
-    private func label(for option: ChatModelOption) -> String {
-        guard let selected = model.selectedReasoning, option.reasoningLevels.contains(selected) else {
-            return "Default"
-        }
-        return selected.label
-    }
 }
 
-private func chip(_ text: String) -> some View {
-    HStack(spacing: 4) {
-        Text(text)
-            .lineLimit(1)
-            .truncationMode(.middle)
-        Image(systemName: "chevron.down")
-            .font(.system(size: 7, weight: .semibold))
-    }
-    .font(.caption)
-    .foregroundStyle(.secondary)
-    .contentShape(Rectangle())
+private func composerLabel(_ text: String, icon: String) -> some View {
+    Label(text, systemImage: icon)
+        .labelStyle(.titleAndIcon)
+        .symbolVariant(.none)
+        .lineLimit(1)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .contentShape(Rectangle())
 }
 
 // MARK: - History
