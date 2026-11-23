@@ -7,6 +7,7 @@
 - Chats and drafts are stored in local SQLite at `~/Library/Application Support/Quick Chat/history.sqlite3`. History survives restarts and is visible only after connecting the same ChatGPT account registration. Signing out leaves history on disk.
 - The global shortcut opens a fresh chat without interrupting replies. Return to any streaming chat through History. **Open Quick Chat** in the menu bar resumes the current chat.
 - The waiting indicator shows provider progress and public reasoning summaries when available. Press Enter to send or Shift–Enter for a new line.
+- Select text in the popup without dragging the window. Move the popup by dragging the blank space in its header.
 
 ## 1.0
 

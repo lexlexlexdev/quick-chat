@@ -56,7 +56,10 @@ struct ChatView: View {
                 Text("Quick Chat").font(.system(size: 17, weight: .semibold))
                 Text("CHATGPT").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
             }
-            Spacer()
+            PanelDragRegion()
+                .frame(maxWidth: .infinity)
+                .frame(height: 40)
+                .accessibilityHidden(true)
             iconButton("History", icon: "clock.arrow.circlepath") { showingHistory.toggle() }
                 .popover(isPresented: $showingHistory, arrowEdge: .bottom) {
                     ChatHistoryList(model: model) { id in
@@ -75,6 +78,19 @@ struct ChatView: View {
             .buttonStyle(.borderless)
             .accessibilityLabel(label)
             .help(label)
+    }
+
+    private struct PanelDragRegion: NSViewRepresentable {
+        func makeNSView(context: Context) -> NSView { DragView() }
+        func updateNSView(_ view: NSView, context: Context) {}
+
+        private final class DragView: NSView {
+            override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+            override func mouseDown(with event: NSEvent) {
+                window?.performDrag(with: event)
+            }
+        }
     }
 
     private var emptyState: some View {
@@ -385,6 +401,7 @@ private struct TranscriptView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 2)
                             .environment(\.openURL, OpenURLAction { url in url.scheme == "https" ? .systemAction : .discarded })
+                            .textSelection(.enabled)
                         }
                         Color.clear.frame(height: 1).id("latest")
                     }
