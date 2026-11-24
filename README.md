@@ -21,7 +21,7 @@ Requires **macOS 14 or later** and an eligible **ChatGPT plan**. No API key is n
 ## Get started
 
 1. Open **Settings…** from the Quick Chat menu bar icon and connect ChatGPT.
-2. In the same window, use **Keyboard Shortcut** to record your shortcut. No shortcut is assigned by default.
+2. Press <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>]</kbd> for a new chat or <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>[</kbd> to continue the current chat. Change either shortcut in **Settings → Keyboard Shortcuts**.
 3. Press <kbd>Enter</kbd> to send or <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line.
 
 Chat history and drafts stay on your Mac in SQLite. Sign-in credentials are stored in Keychain. Messages you send are processed by ChatGPT.
