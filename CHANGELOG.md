@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Drag the chat panel by any non-button part of its header. Resize it from its corners; Quick Chat remembers the size.
+- **⌘⇧]** opens a new chat without interrupting replies. **⌘⇧[** reopens the current chat and its draft. Change or remove either shortcut in **Settings → Keyboard Shortcuts**. Existing custom shortcuts still open a new chat.
+
 ## 1.1.0
 
 - Record, change, or remove the global shortcut in **Settings**, alongside the ChatGPT connection.

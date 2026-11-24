@@ -30,133 +30,135 @@ struct GlobalShortcut: Equatable {
     }
 }
 
-enum GlobalShortcutStore {
-    private enum Key {
-        static let keyCode = "QuickChat.shortcut.keyCode"
-        static let modifiers = "QuickChat.shortcut.modifiers"
-        static let label = "QuickChat.shortcut.label"
+enum ShortcutAction: CaseIterable {
+    case newChat
+    case continueChat
+
+    var title: String {
+        switch self {
+        case .newChat: "New Chat"
+        case .continueChat: "Continue Chat"
+        }
     }
 
-    /// There is no default shortcut. A missing value means Quick Chat is only reachable from the menu bar.
-    static func load() -> GlobalShortcut? {
-        let defaults = UserDefaults.standard
-        guard let label = defaults.string(forKey: Key.label), !label.isEmpty,
-              defaults.object(forKey: Key.keyCode) != nil,
-              defaults.object(forKey: Key.modifiers) != nil else { return nil }
-        let keyCode = defaults.integer(forKey: Key.keyCode)
-        guard (0...Int(UInt16.max)).contains(keyCode),
-              let modifiers = UInt32(exactly: defaults.integer(forKey: Key.modifiers)) else { return nil }
+    fileprivate var settingsPrefix: String {
+        switch self {
+        case .newChat: "QuickChat.shortcut"
+        case .continueChat: "QuickChat.continueShortcut"
+        }
+    }
+
+    fileprivate var defaultShortcut: GlobalShortcut {
+        switch self {
+        case .newChat: GlobalShortcut(keyCode: UInt32(kVK_ANSI_RightBracket), modifiers: UInt32(cmdKey | shiftKey), label: "⇧⌘]")
+        case .continueChat: GlobalShortcut(keyCode: UInt32(kVK_ANSI_LeftBracket), modifiers: UInt32(cmdKey | shiftKey), label: "⇧⌘[")
+        }
+    }
+}
+
+struct GlobalShortcutStore {
+    let defaults: UserDefaults
+
+    func load(_ action: ShortcutAction) -> GlobalShortcut? {
+        let prefix = action.settingsPrefix
+        if defaults.bool(forKey: prefix + ".disabled") { return nil }
+        guard let label = defaults.string(forKey: prefix + ".label"), !label.isEmpty,
+              let keyCode = defaults.object(forKey: prefix + ".keyCode") as? Int,
+              (0...Int(UInt16.max)).contains(keyCode),
+              let rawModifiers = defaults.object(forKey: prefix + ".modifiers") as? Int,
+              let modifiers = UInt32(exactly: rawModifiers) else { return action.defaultShortcut }
         return GlobalShortcut(keyCode: UInt32(keyCode), modifiers: modifiers, label: label)
     }
 
-    static func save(_ shortcut: GlobalShortcut) {
-        let defaults = UserDefaults.standard
-        defaults.set(Int(shortcut.keyCode), forKey: Key.keyCode)
-        defaults.set(Int(shortcut.modifiers), forKey: Key.modifiers)
-        defaults.set(shortcut.label, forKey: Key.label)
-    }
-
-    static func clear() {
-        let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: Key.keyCode)
-        defaults.removeObject(forKey: Key.modifiers)
-        defaults.removeObject(forKey: Key.label)
+    func save(_ shortcut: GlobalShortcut?, for action: ShortcutAction) {
+        let prefix = action.settingsPrefix
+        defaults.set(shortcut == nil, forKey: prefix + ".disabled")
+        defaults.set(shortcut.map { Int($0.keyCode) }, forKey: prefix + ".keyCode")
+        defaults.set(shortcut.map { Int($0.modifiers) }, forKey: prefix + ".modifiers")
+        defaults.set(shortcut?.label, forKey: prefix + ".label")
     }
 }
 
 @MainActor
 final class ShortcutController: ObservableObject {
-    @Published private(set) var shortcut: GlobalShortcut?
-    @Published private(set) var error: String?
+    @Published private(set) var shortcuts: [ShortcutAction: GlobalShortcut] = [:]
+    @Published private(set) var errors: [ShortcutAction: String] = [:]
 
     private static let signature: OSType = 0x51434854 // 'QCHT'
+    private let store = GlobalShortcutStore(defaults: .standard)
+    private struct Registration {
+        let id: UInt32
+        let reference: EventHotKeyRef
+    }
 
-    private var hotKey: EventHotKeyRef?
+    private var registrations: [ShortcutAction: Registration] = [:]
     private var eventHandler: EventHandlerRef?
     private var nextID: UInt32 = 1
-    private var onPress: (() -> Void)?
-
-    /// Changes whenever the saved shortcut or its registration state changes.
+    private var onPress: ((ShortcutAction) -> Void)?
     var onShortcutChange: (() -> Void)?
 
-    var hasShortcut: Bool { shortcut != nil }
-
-    func install(onPress: @escaping () -> Void) {
+    func install(onPress: @escaping (ShortcutAction) -> Void) {
         self.onPress = onPress
         guard eventHandler == nil else { return }
 
         var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let pointer = Unmanaged.passUnretained(self).toOpaque()
-        let status = InstallEventHandler(GetApplicationEventTarget(), { _, _, userData in
-            guard let userData else { return OSStatus(eventNotHandledErr) }
+        let status = InstallEventHandler(GetApplicationEventTarget(), { _, event, userData in
+            guard let event, let userData else { return OSStatus(eventNotHandledErr) }
+            var identifier = EventHotKeyID()
+            guard GetEventParameter(event, OSType(kEventParamDirectObject), OSType(typeEventHotKeyID),
+                                    nil, MemoryLayout<EventHotKeyID>.size, nil, &identifier) == noErr else {
+                return OSStatus(eventNotHandledErr)
+            }
             let controller = Unmanaged<ShortcutController>.fromOpaque(userData).takeUnretainedValue()
+            let signature = identifier.signature
+            let id = identifier.id
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { controller.handlePress() }
+                controller.handlePress(signature: signature, id: id)
             }
             return noErr
         }, 1, &type, pointer, &eventHandler)
+        if status != noErr { eventHandler = nil }
 
-        guard status == noErr else {
-            eventHandler = nil
-            shortcut = GlobalShortcutStore.load()
-            error = "Keyboard shortcuts aren't available. Open Quick Chat from the menu bar."
-            onShortcutChange?()
-            return
+        for action in ShortcutAction.allCases {
+            guard let saved = store.load(action) else { continue }
+            shortcuts[action] = saved
+            errors[action] = register(saved, for: action)
         }
-        loadSavedShortcut()
+        onShortcutChange?()
     }
 
     /// Saves and registers a new shortcut. A conflicting shortcut is rejected and the
     /// previously registered shortcut keeps working.
-    @discardableResult
-    func set(_ candidate: GlobalShortcut?) -> String? {
-        guard let candidate else {
-            if let hotKey { UnregisterEventHotKey(hotKey); self.hotKey = nil }
-            shortcut = nil
-            GlobalShortcutStore.clear()
-            error = nil
-            onShortcutChange?()
-            return nil
+    func set(_ candidate: GlobalShortcut?, for action: ShortcutAction) {
+        if let candidate {
+            let previous = shortcuts[action]
+            if registrations[action] == nil || previous?.keyCode != candidate.keyCode || previous?.modifiers != candidate.modifiers,
+               let message = register(candidate, for: action) {
+                errors[action] = message
+                onShortcutChange?()
+                return
+            }
+        } else if let registration = registrations.removeValue(forKey: action) {
+            UnregisterEventHotKey(registration.reference)
         }
 
-        if candidate == shortcut, hotKey != nil {
-            error = nil
-            onShortcutChange?()
-            return nil
-        }
-
-        if let message = register(candidate) {
-            error = message
-            onShortcutChange?()
-            return message
-        }
-
-        shortcut = candidate
-        GlobalShortcutStore.save(candidate)
-        error = nil
+        shortcuts[action] = candidate
+        store.save(candidate, for: action)
+        errors[action] = nil
         onShortcutChange?()
-        return nil
     }
 
     func deactivate() {
-        if let hotKey { UnregisterEventHotKey(hotKey); self.hotKey = nil }
+        for registration in registrations.values {
+            UnregisterEventHotKey(registration.reference)
+        }
+        registrations.removeAll()
         if let eventHandler { RemoveEventHandler(eventHandler); self.eventHandler = nil }
         onPress = nil
     }
 
-    private func loadSavedShortcut() {
-        guard let saved = GlobalShortcutStore.load() else {
-            onShortcutChange?()
-            return
-        }
-        shortcut = saved
-        if let message = register(saved) {
-            error = message
-        }
-        onShortcutChange?()
-    }
-
-    private func register(_ candidate: GlobalShortcut) -> String? {
+    private func register(_ candidate: GlobalShortcut, for action: ShortcutAction) -> String? {
         guard eventHandler != nil else {
             return "Keyboard shortcuts aren't available. Open Quick Chat from the menu bar."
         }
@@ -172,13 +174,16 @@ final class ShortcutController: ObservableObject {
         }
         // The new shortcut is alive before the old one is released, so a failure above
         // never leaves the app without its previous working shortcut.
-        if let hotKey { UnregisterEventHotKey(hotKey) }
-        hotKey = reference
+        if let previous = registrations.updateValue(Registration(id: identifier.id, reference: reference), forKey: action) {
+            UnregisterEventHotKey(previous.reference)
+        }
         return nil
     }
 
-    private func handlePress() {
-        onPress?()
+    private func handlePress(signature: OSType, id: UInt32) {
+        guard signature == Self.signature,
+              let action = registrations.first(where: { $0.value.id == id })?.key else { return }
+        onPress?(action)
     }
 }
 
@@ -236,16 +241,17 @@ enum ShortcutKeyLabel {
 
 struct ShortcutRecorder: NSViewRepresentable {
     var shortcut: GlobalShortcut?
+    var label: String
     var onRecord: (GlobalShortcut?) -> Void
 
     func makeNSView(context: Context) -> ShortcutRecorderField {
         let field = ShortcutRecorderField()
-        field.shortcut = shortcut
-        field.onRecord = onRecord
+        updateNSView(field, context: context)
         return field
     }
 
     func updateNSView(_ field: ShortcutRecorderField, context: Context) {
+        field.setAccessibilityLabel(label)
         field.onRecord = onRecord
         if field.shortcut != shortcut { field.shortcut = shortcut }
     }
@@ -269,7 +275,6 @@ final class ShortcutRecorderField: NSTextField {
         lineBreakMode = .byTruncatingTail
         toolTip = "Click to record a shortcut"
         setAccessibilityRole(.button)
-        setAccessibilityLabel("Quick Chat shortcut")
         setAccessibilityHelp("Click, then press a combination that includes Command, Option, or Control.")
         refresh()
     }

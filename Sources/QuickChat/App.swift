@@ -21,10 +21,14 @@ final class QuickChatPanel: NSPanel {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let model = ChatModel()
     private let rootState = ChatRootState()
     private let shortcuts = ShortcutController()
+
+    private static let defaultPanelSize = NSSize(width: 540, height: 620)
+    private static let minimumPanelSize = NSSize(width: 420, height: 400)
+    private static let panelSizeKey = "QuickChat.panel.contentSize"
 
     private var panel: QuickChatPanel?
     private var settingsWindow: NSWindow?
@@ -37,7 +41,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
 
         shortcuts.onShortcutChange = { [weak self] in self?.updateStatusItem() }
-        shortcuts.install { [weak self] in self?.openFreshChat() }
+        shortcuts.install { [weak self] action in
+            switch action {
+            case .newChat: self?.openFreshChat()
+            case .continueChat: self?.showPanel()
+            }
+        }
         updateStatusItem()
     }
 
@@ -61,12 +70,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let hostingView = NSHostingView(rootView: content)
 
-        let size = NSSize(width: 540, height: 620)
+        let screen = activeScreen
+        let size = panelSize(on: screen)
         hostingView.frame = NSRect(origin: .zero, size: size)
 
         let panel = QuickChatPanel(
             contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -87,12 +97,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.animationBehavior = .utilityWindow
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.contentView = hostingView
+        panel.contentMinSize = Self.minimumPanelSize
         panel.setContentSize(size)
 
-        if let screen = activeScreen {
-            panel.setFrame(centeredFrame(for: size, on: screen), display: false)
+        if let screen {
+            panel.setFrame(centeredFrame(for: panel.frame.size, on: screen), display: false)
         }
         self.panel = panel
+        panel.delegate = self
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === panel else { return }
+        let size = window.contentRect(forFrameRect: window.frame).size
+        UserDefaults.standard.set(NSStringFromSize(size), forKey: Self.panelSizeKey)
+    }
+
+    private func panelSize(on screen: NSScreen?) -> NSSize {
+        let saved = UserDefaults.standard.string(forKey: Self.panelSizeKey).map(NSSizeFromString)
+            ?? Self.defaultPanelSize
+        let available = screen?.visibleFrame.insetBy(dx: 12, dy: 12).size ?? saved
+        return NSSize(width: max(Self.minimumPanelSize.width, min(saved.width, available.width)),
+                      height: max(Self.minimumPanelSize.height, min(saved.height, available.height)))
     }
 
     private func openFreshChat() {
@@ -105,7 +131,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showPanel() {
         guard let panel else { return }
         if let screen = activeScreen, panel.screen !== screen {
-            panel.setFrame(centeredFrame(for: panel.frame.size, on: screen), display: false)
+            let contentRect = NSRect(origin: .zero, size: panelSize(on: screen))
+            let size = panel.frameRect(forContentRect: contentRect).size
+            panel.setFrame(centeredFrame(for: size, on: screen), display: false)
         }
         rootState.focusRequest += 1
         panel.orderFrontRegardless()
@@ -174,10 +202,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusItem() {
         guard let button = statusItem?.button else { return }
-        if shortcuts.error != nil {
-            button.toolTip = "Quick Chat — shortcut unavailable"
-        } else if let label = shortcuts.shortcut?.label {
-            button.toolTip = "Quick Chat — \(label)"
+        if !shortcuts.errors.isEmpty {
+            button.toolTip = "Quick Chat — check shortcuts in Settings"
+        } else if let label = shortcuts.shortcuts[.newChat]?.label {
+            button.toolTip = "Quick Chat — New Chat: \(label)"
         } else {
             button.toolTip = "Quick Chat"
         }
@@ -266,32 +294,43 @@ private struct SettingsView: View {
 
     private var shortcutSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Keyboard Shortcut", systemImage: "keyboard")
+            Label("Keyboard Shortcuts", systemImage: "keyboard")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.accentColor)
 
-            HStack(spacing: 10) {
-                ShortcutRecorder(shortcut: shortcuts.shortcut) { candidate in
-                    _ = shortcuts.set(candidate)
-                }
-                .frame(width: 170, height: 26)
-
-                if shortcuts.hasShortcut {
-                    Button("Remove") {
-                        _ = shortcuts.set(nil)
-                    }
-                    .controlSize(.small)
-                }
-
-                Spacer(minLength: 0)
+            ForEach(ShortcutAction.allCases, id: \.self) { action in
+                shortcutRow(for: action)
             }
 
-            Text("Click the field, then press a shortcut with ⌘, ⌥, or ⌃ to open Quick Chat from any app.")
+            Text("Click a field, then press a shortcut with ⌘, ⌥, or ⌃.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if let error = shortcuts.error {
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 14))
+        .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.primary.opacity(0.06)).allowsHitTesting(false) }
+    }
+
+    private func shortcutRow(for action: ShortcutAction) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Text(action.title)
+                Spacer(minLength: 8)
+                ShortcutRecorder(shortcut: shortcuts.shortcuts[action], label: "\(action.title) shortcut") { candidate in
+                    shortcuts.set(candidate, for: action)
+                }
+                .frame(width: 145, height: 26)
+                if shortcuts.shortcuts[action] != nil {
+                    Button("Remove") { shortcuts.set(nil, for: action) }
+                        .controlSize(.small)
+                        .accessibilityLabel("Remove \(action.title) shortcut")
+                }
+            }
+
+            if let error = shortcuts.errors[action] {
                 Label(error, systemImage: "exclamationmark.circle.fill")
                     .font(.callout)
                     .foregroundStyle(.red)
@@ -299,9 +338,5 @@ private struct SettingsView: View {
                     .textSelection(.enabled)
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 14))
-        .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.primary.opacity(0.06)).allowsHitTesting(false) }
     }
 }

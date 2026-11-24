@@ -12,25 +12,26 @@ struct ChatView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            if let error = model.historyError {
-                HStack {
-                    Label(error, systemImage: "exclamationmark.circle")
-                    Spacer()
-                    Button("Retry", action: model.retryHistory)
+            VStack(alignment: .leading, spacing: 12) {
+                if let error = model.historyError {
+                    HStack {
+                        Label(error, systemImage: "exclamationmark.circle")
+                        Spacer()
+                        Button("Retry", action: model.retryHistory)
+                    }
+                    .font(.callout)
                 }
-                .font(.callout)
+                ZStack {
+                    TranscriptView(chatID: model.activeChatID, exchanges: model.exchanges,
+                                   source: model.activeSource, activity: model.replyActivity)
+                    if model.exchanges.isEmpty { emptyState }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if model.account != nil && model.historyLoaded { composer }
             }
-            ZStack {
-                TranscriptView(chatID: model.activeChatID, exchanges: model.exchanges,
-                               source: model.activeSource, activity: model.replyActivity)
-                if model.exchanges.isEmpty { emptyState }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if model.account != nil && model.historyLoaded { composer }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
-        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: PopupSurface.color), in: panelShape)
         .overlay { panelShape.strokeBorder(.primary.opacity(0.10)).allowsHitTesting(false) }
@@ -49,10 +50,8 @@ struct ChatView: View {
         HStack(spacing: 6) {
             Text("Quick Chat")
                 .font(.system(size: 15, weight: .semibold))
-            PanelDragRegion()
-                .frame(maxWidth: .infinity)
-                .frame(height: 32)
-                .accessibilityHidden(true)
+                .allowsHitTesting(false)
+            Spacer(minLength: 0)
             iconButton("History", icon: "clock.arrow.circlepath") { showingHistory.toggle() }
                 .popover(isPresented: $showingHistory, arrowEdge: .bottom) {
                     ChatHistoryList(model: model) { id in
@@ -64,6 +63,10 @@ struct ChatView: View {
             iconButton("Settings", icon: "gearshape", action: openSettings)
             iconButton("Hide chat", icon: "xmark", action: hide)
         }
+        .frame(height: 32)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .background { PanelDragRegion().accessibilityHidden(true) }
     }
 
     private func iconButton(_ label: String, icon: String, action: @escaping () -> Void) -> some View {
