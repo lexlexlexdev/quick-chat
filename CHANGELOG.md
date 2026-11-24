@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
 
 - Render LaTeX math in Markdown replies with bundled KaTeX. Use `$…$` or `\(…\)` inline and `$$…$$` or `\[…\]` on their own lines for display equations.
 
