@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Render LaTeX math in Markdown replies with bundled KaTeX. Use `$…$` or `\(…\)` inline and `$$…$$` or `\[…\]` on their own lines for display equations.
+
 ## 1.2.0
 
 - Drag the chat panel by any non-button part of its header. Resize it from its corners; Quick Chat remembers the size.

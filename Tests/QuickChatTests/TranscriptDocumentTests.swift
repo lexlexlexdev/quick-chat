@@ -7,7 +7,7 @@ import Testing
     let html = try TranscriptDocument.bundled.get()
     let policy = try #require(html.split(separator: "\n").first { $0.contains("Content-Security-Policy") })
     let sections = html.components(separatedBy: "<script>").dropFirst()
-    #expect(sections.count == 3)
+    #expect(sections.count == 4)
     for section in sections {
         let end = try #require(section.range(of: "</script>"))
         let source = section[..<end.lowerBound]

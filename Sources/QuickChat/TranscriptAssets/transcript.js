@@ -60,6 +60,86 @@
             "</div>";
     }
 
+    function installMath(markdown, katex) {
+        function closingDelimiter(source, delimiter, start, limit) {
+            for (let i = start; i < limit; i++) {
+                if (source.startsWith(delimiter, i)) return i;
+                if (source[i] === "\\") i++;
+            }
+            return -1;
+        }
+
+        markdown.inline.ruler.before("escape", "math_inline", (state, silent) => {
+            const { src, pos, posMax } = state;
+            const dollar = src[pos] === "$" && src[pos - 1] !== "$" && src[pos + 1] !== "$";
+            if (!dollar && !src.startsWith("\\(", pos)) return false;
+            const start = pos + (dollar ? 1 : 2);
+            const closer = dollar ? "$" : "\\)";
+            const end = closingDelimiter(src, closer, start, posMax);
+            if (end <= start || end + closer.length > posMax) return false;
+            const content = src.slice(start, end);
+            if (dollar && (content.trim() !== content || /[\n`]/.test(content) ||
+                /[\d$]/.test(src.charAt(end + 1)))) return false;
+            if (!content.trim()) return false;
+            if (!silent) {
+                const token = state.push("math_inline", "", 0);
+                token.content = content;
+                token.markup = dollar ? "$" : "\\(";
+            }
+            state.pos = end + closer.length;
+            return true;
+        });
+
+        markdown.block.ruler.before("fence", "math_block", (state, startLine, endLine, silent) => {
+            if (state.sCount[startLine] - state.blkIndent >= 4) return false;
+            const indent = state.sCount[startLine];
+            const first = state.getLines(startLine, startLine + 1, indent, false);
+            const opener = first.startsWith("$$") ? "$$" : first.startsWith("\\[") ? "\\[" : "";
+            if (!opener) return false;
+            const closer = opener === "$$" ? "$$" : "\\]";
+            let line = startLine;
+            let text = first.slice(opener.length);
+            let end;
+            for (;;) {
+                end = closingDelimiter(text, closer, 0, text.length);
+                if (end !== -1) {
+                    if (text.slice(end + closer.length).trim()) return false;
+                    break;
+                }
+                if (++line >= endLine || (state.sCount[line] < state.blkIndent && !state.isEmpty(line))) return false;
+                text = state.getLines(line, line + 1, indent, false);
+            }
+            const content = line === startLine ? text.slice(0, end) :
+                first.slice(opener.length) + "\n" + state.getLines(startLine + 1, line, indent, true) + text.slice(0, end);
+            if (!content.trim()) return false;
+            if (silent) return true;
+            const token = state.push("math_block", "", 0);
+            token.block = true;
+            token.content = content;
+            token.markup = opener;
+            token.map = [startLine, line + 1];
+            state.line = line + 1;
+            return true;
+        }, { alt: ["paragraph", "reference", "blockquote", "list"] });
+
+        function renderMath(token, displayMode) {
+            let result;
+            try {
+                // WebKit renders MathML natively, with no KaTeX stylesheet or font downloads.
+                result = katex.renderToString(token.content, {
+                    displayMode, output: "mathml", trust: false, maxExpand: 200, maxSize: 20
+                });
+            } catch {
+                const close = { "\\(": "\\)", "\\[": "\\]" }[token.markup] || token.markup;
+                result = escapeHtml(token.markup + token.content + close);
+            }
+            return displayMode ? '<div class="math-display">' + result + "</div>\n" : result;
+        }
+
+        markdown.renderer.rules.math_inline = (tokens, index) => renderMath(tokens[index], false);
+        markdown.renderer.rules.math_block = (tokens, index) => renderMath(tokens[index], true);
+    }
+
     if (hasMarkdown) {
         md = window.markdownit({
             html: false,
@@ -68,6 +148,8 @@
             linkify: true,
             typographer: false
         });
+
+        installMath(md, window.katex);
 
         md.validateLink = function (url) {
             return /^https:\/\/[^\s<>"']+$/i.test(url);

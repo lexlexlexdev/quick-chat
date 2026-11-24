@@ -28,7 +28,7 @@ struct TranscriptDocument {
         let assets = Bundle.module.resourceURL!.appendingPathComponent("TranscriptAssets", isDirectory: true)
         let styles = try PopupSurface.stylesheet + "\n"
             + read(assets.appendingPathComponent("transcript.css"), tag: "style")
-        let scripts = try ["markdown-it.min.js", "highlight.min.js", "transcript.js"].map {
+        let scripts = try ["markdown-it.min.js", "highlight.min.js", "katex.min.js", "transcript.js"].map {
             try read(assets.appendingPathComponent($0), tag: "script")
         }
         let policies = "default-src 'none'; script-src \(scripts.map(hash).joined(separator: " ")); "
