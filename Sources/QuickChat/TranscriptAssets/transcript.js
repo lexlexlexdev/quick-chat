@@ -61,6 +61,9 @@
     }
 
     function installMath(markdown, katex) {
+        const closing = { "$": "$", "$$": "$$", "\\(": "\\)", "\\[": "\\]" };
+        let reportedMathError = false;
+
         function closingDelimiter(source, delimiter, start, limit) {
             for (let i = start; i < limit; i++) {
                 if (source.startsWith(delimiter, i)) return i;
@@ -71,20 +74,32 @@
 
         markdown.inline.ruler.before("escape", "math_inline", (state, silent) => {
             const { src, pos, posMax } = state;
-            const dollar = src[pos] === "$" && src[pos - 1] !== "$" && src[pos + 1] !== "$";
-            if (!dollar && !src.startsWith("\\(", pos)) return false;
-            const start = pos + (dollar ? 1 : 2);
-            const closer = dollar ? "$" : "\\)";
+            let opener;
+            if (src.startsWith("\\(", pos)) opener = "\\(";
+            else if (src.startsWith("\\[", pos)) opener = "\\[";
+            else if (src[pos] === "$" && src[pos - 1] !== "$") opener = src[pos + 1] === "$" ? "$$" : "$";
+            else return false;
+
+            const display = opener === "$$" || opener === "\\[";
+            const start = pos + opener.length;
+            const closer = closing[opener];
             const end = closingDelimiter(src, closer, start, posMax);
-            if (end <= start || end + closer.length > posMax) return false;
+            if (end <= start || end + closer.length > posMax) {
+                if (opener !== "\\[") return false;
+                // Leave an unfinished display opener visible until the stream supplies its closer.
+                if (!silent) state.pending += opener;
+                state.pos = start;
+                return true;
+            }
             const content = src.slice(start, end);
-            if (dollar && (content.trim() !== content || /[\n`]/.test(content) ||
+            if ((display || opener === "$") && content.includes("`")) return false;
+            if (opener === "$" && (content.trim() !== content || content.includes("\n") ||
                 /[\d$]/.test(src.charAt(end + 1)))) return false;
             if (!content.trim()) return false;
             if (!silent) {
-                const token = state.push("math_inline", "", 0);
+                const token = state.push(display ? "math_display" : "math_inline", "", 0);
                 token.content = content;
-                token.markup = dollar ? "$" : "\\(";
+                token.markup = opener;
             }
             state.pos = end + closer.length;
             return true;
@@ -96,7 +111,7 @@
             const first = state.getLines(startLine, startLine + 1, indent, false);
             const opener = first.startsWith("$$") ? "$$" : first.startsWith("\\[") ? "\\[" : "";
             if (!opener) return false;
-            const closer = opener === "$$" ? "$$" : "\\]";
+            const closer = closing[opener];
             let line = startLine;
             let text = first.slice(opener.length);
             let end;
@@ -107,6 +122,8 @@
                     break;
                 }
                 if (++line >= endLine || (state.sCount[line] < state.blkIndent && !state.isEmpty(line))) return false;
+                const lineStart = state.src.slice(state.bMarks[line] + state.tShift[line], state.eMarks[line]);
+                if (/^(?:`{3,}|~{3,})/.test(lineStart)) return false;
                 text = state.getLines(line, line + 1, indent, false);
             }
             const content = line === startLine ? text.slice(0, end) :
@@ -127,16 +144,21 @@
             try {
                 // WebKit renders MathML natively, with no KaTeX stylesheet or font downloads.
                 result = katex.renderToString(token.content, {
-                    displayMode, output: "mathml", trust: false, maxExpand: 200, maxSize: 20
+                    displayMode, output: "mathml", trust: false, strict: "ignore", maxExpand: 200, maxSize: 20
                 });
             } catch {
-                const close = { "\\(": "\\)", "\\[": "\\]" }[token.markup] || token.markup;
-                result = escapeHtml(token.markup + token.content + close);
+                if (!reportedMathError) {
+                    console.warn("Quick Chat: KaTeX could not render an equation; displaying its source instead.");
+                    reportedMathError = true;
+                }
+                result = escapeHtml(token.markup + token.content + closing[token.markup]);
             }
-            return displayMode ? '<div class="math-display">' + result + "</div>\n" : result;
+            if (token.block) return '<div class="math-display">' + result + "</div>\n";
+            return displayMode ? '<span class="math-display">' + result + "</span>" : result;
         }
 
         markdown.renderer.rules.math_inline = (tokens, index) => renderMath(tokens[index], false);
+        markdown.renderer.rules.math_display = (tokens, index) => renderMath(tokens[index], true);
         markdown.renderer.rules.math_block = (tokens, index) => renderMath(tokens[index], true);
     }
 
