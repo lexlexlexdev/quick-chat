@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1
+
+- Render display equations next to prose in Markdown replies, including when a streamed equation closes after the surrounding text arrives.
+
 ## 1.3.0
 
 - Render LaTeX math in Markdown replies with bundled KaTeX. Use `$…$` or `\(…\)` inline and `$$…$$` or `\[…\]` on their own lines for display equations.
